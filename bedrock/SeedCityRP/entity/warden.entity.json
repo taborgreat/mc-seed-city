@@ -1,0 +1,43 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "seedcity:warden",
+      "materials": {
+        "default": "entity_alphatest",
+        "glow": "entity_emissive_alpha"
+      },
+      "textures": {
+        "default": "textures/entity/warden",
+        "glow": "textures/entity/warden_glow"
+      },
+      "geometry": {
+        "default": "geometry.seedcity.warden"
+      },
+      "animations": {
+        "main": "animation.seedcity.warden"
+      },
+      "scripts": {
+        "pre_animation": [
+          "v.walk = (q.property('seedcity:pose') == 2) ? 1.0 : (q.property('seedcity:pose') == 0 ? math.min(q.modified_move_speed * 3.0, 1.0) : 0.0);",
+          "v.p = math.mod(q.anim_time,0.3)/0.3;",
+          "v.stroke = math.sin((1-math.pow(1-v.p,4))*180);",
+          "v.arc = math.sin(v.p*180);",
+          "v.sweep = math.sin(math.sqrt(v.p)*360);"
+        ],
+        "animate": [
+          "main"
+        ]
+      },
+      "render_controllers": [
+        "controller.render.seedcity",
+        "controller.render.seedcity_glow"
+      ],
+      "spawn_egg": {
+        "base_color": "#56595C",
+        "overlay_color": "#FFB238"
+      },
+      "enable_attachables": false
+    }
+  }
+}

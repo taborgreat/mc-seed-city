@@ -1,0 +1,127 @@
+{
+  "format_version": "1.26.0",
+  "minecraft:entity": {
+    "description": {
+      "identifier": "seedcity:redstone_rat",
+      "is_spawnable": true,
+      "is_summonable": true,
+      "properties": {
+        "seedcity:pose": {
+          "type": "int",
+          "range": [
+            0,
+            16
+          ],
+          "default": 0,
+          "client_sync": true
+        }
+      }
+    },
+    "components": {
+      "minecraft:type_family": {
+        "family": [
+          "redstone_rat",
+          "mob",
+          "cat"
+        ]
+      },
+      "minecraft:health": {
+        "value": 30,
+        "max": 30
+      },
+      "minecraft:collision_box": {
+        "width": 0.55,
+        "height": 0.3
+      },
+      "minecraft:movement": {
+        "value": 0.25
+      },
+      "minecraft:movement.basic": {},
+      "minecraft:navigation.walk": {
+        "avoid_water": true,
+        "can_path_over_water": false
+      },
+      "minecraft:jump.static": {},
+      "minecraft:physics": {},
+      "minecraft:pushable": {
+        "is_pushable": true,
+        "is_pushable_by_piston": true
+      },
+      "minecraft:persistent": {},
+      "minecraft:nameable": {},
+      "minecraft:behavior.random_stroll": {
+        "priority": 6,
+        "speed_multiplier": 1
+      },
+      "minecraft:behavior.look_at_player": {
+        "priority": 7,
+        "look_distance": 8
+      },
+      "minecraft:behavior.random_look_around": {
+        "priority": 8
+      },
+      "minecraft:ambient_sound_interval": {
+        "value": 120,
+        "range": 60,
+        "event_name": "ambient"
+      }
+    },
+    "component_groups": {
+      "exhibit": {
+        "minecraft:movement": {
+          "value": 0
+        },
+        "minecraft:flying_speed": {
+          "value": 0
+        },
+        "minecraft:pushable": {
+          "is_pushable": false,
+          "is_pushable_by_piston": false
+        },
+        "minecraft:knockback_resistance": {
+          "value": 1
+        },
+        "minecraft:damage_sensor": {
+          "triggers": [
+            {
+              "cause": "all",
+              "deals_damage": "no"
+            }
+          ]
+        }
+      }
+    },
+    "events": {
+      "seedcity:pose_idle": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 1
+        }
+      },
+      "seedcity:pose_walk": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 2
+        }
+      },
+      "seedcity:pose_look": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 3
+        }
+      }
+    }
+  }
+}

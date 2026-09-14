@@ -22,7 +22,7 @@ import java.util.Optional;
 
 /**
  * A city organ that hovers over the frontier: knows which city it belongs to, flies, never
- * despawns, and never takes fall damage. Builders and Wardens share this; the Sentinel walks.
+ * despawns, and never takes fall damage. Used by Builders; Rectifiers and Sentinels walk.
  */
 public abstract class FlyingCityMob extends PathfinderMob {
 	protected BlockPos cityPos;

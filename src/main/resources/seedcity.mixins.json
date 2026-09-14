@@ -3,6 +3,7 @@
 	"package": "net.tabor.seedcity.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
+		"CreeperRatAvoidanceMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

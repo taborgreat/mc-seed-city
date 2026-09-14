@@ -185,6 +185,7 @@ public final class CityState {
 	).apply(i, CityState::new));
 
 	private final BlockPos seedPos;
+	private long nextRatSpawnAttempt;
 	private final long citySeed;
 	private boolean frozen;
 	private int builtCount;
@@ -976,6 +977,11 @@ public final class CityState {
 		if (builders.size() < desired) {
 			spawnBuilder(level);
 		}
+        if(level.getGameTime()>=nextRatSpawnAttempt) {
+            nextRatSpawnAttempt=level.getGameTime()+1200;
+            if(level.getNearestPlayer(seedPos.getX(),seedPos.getY(),seedPos.getZ(),64,false)!=null)
+                net.tabor.seedcity.entity.RedstoneRatSpawning.trySpawn(level,seedPos,cfg.maxRedstoneRats);
+        }
 		keepWardensPosted(level);
 		if (cfg.sentinelsOnRegisters) {
 			postSentinels(level);
@@ -1041,7 +1047,9 @@ public final class CityState {
 	}
 
 	public void spawnWarden(ServerLevel level, String district) {
-		WardenEntity w = SeedCityEntities.WARDEN.spawn(level, seedPos.above(5), EntitySpawnReason.MOB_SUMMONED);
+		Optional<BlockPos> feet = WardenEntity.groundSpawn(level, seedPos);
+		if (feet.isEmpty()) return; // Retry on the next posting pass when floor space opens up.
+		WardenEntity w = SeedCityEntities.WARDEN.spawn(level, feet.get(), EntitySpawnReason.MOB_SUMMONED);
 		if (w != null) {
 			w.assign(seedPos, district);
 			SeedCity.LOGGER.info("City {}: Warden posted to {}", seedPos.toShortString(), district);

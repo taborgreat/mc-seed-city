@@ -38,6 +38,7 @@ public final class Integrity {
 
 	/** True when the two states are the same circuit element, ignoring runtime state. */
 	public static boolean equivalent(BlockState expected, BlockState actual) {
+		if (expected.isAir() && actual.is(SeedCityBlocks.COLLECTOR_LIGHT)) return true;
 		if (expected.getBlock() != actual.getBlock()) {
 			return false;
 		}

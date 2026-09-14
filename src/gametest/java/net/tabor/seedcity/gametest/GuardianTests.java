@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Rotation;
+import net.minecraft.world.phys.Vec3;
 import net.tabor.seedcity.SeedCity;
 import net.tabor.seedcity.SeedCityBlocks;
 import net.tabor.seedcity.cell.Placement;
@@ -81,7 +82,8 @@ public final class GuardianTests {
 				helper.assertEntityPresent(SeedCityEntities.WARDEN);
 			}
 			if (helper.getTick() > 3600) {
-				helper.fail("wire not repaired within 3 minutes: " + c.summary() + " " + c.slot(WIRE).map(Object::toString).orElse("?"));
+				helper.fail("wire not repaired within 3 minutes: " + c.summary() + " " + c.slot(WIRE).map(Object::toString).orElse("?")
+						+ " wardens=" + c.wardens(level).stream().map(w -> w.status()+" at "+w.position()).toList());
 			}
 			boolean restored = level.getBlockState(dust).is(Blocks.REDSTONE_WIRE);
 			boolean built = c.slot(WIRE).map(s -> s.status == CityState.SlotStatus.BUILT).orElse(false);
@@ -146,6 +148,29 @@ public final class GuardianTests {
 			if (helper.getTick() == 200) {
 				helper.assertValueEqual(sentinel.alertness(), 15, "alertness with bus at 15");
 				helper.assertTrue(sentinel.hostile(), "sentinel should be hostile at 15");
+				helper.succeed();
+			}
+		});
+	}
+
+	@GameTest(structure = BOAT, maxTicks = 240)
+	public void rectifierLandsAndWalks(GameTestHelper helper) {
+		for (int x=1;x<30;x++) for (int z=1;z<20;z++) {
+			helper.setBlock(new BlockPos(x,1,z),Blocks.STONE);
+			for(int y=2;y<12;y++) helper.setBlock(new BlockPos(x,y,z),Blocks.AIR);
+		}
+		var worker=helper.spawn(SeedCityEntities.WARDEN,new BlockPos(5,7,10));
+		// An unregistered city disables idle wandering while this test drives a fixed route.
+		worker.assign(helper.absolutePos(new BlockPos(2,2,2)),"test");
+		Vec3 destination=Vec3.atBottomCenterOf(helper.absolutePos(new BlockPos(19,2,10)));
+		helper.onEachTick(()->{
+			if (helper.getTick()==60) {
+				helper.assertTrue(worker.onGround(),"Rectifier must fall to the floor instead of hovering");
+				helper.assertFalse(worker.isNoGravity(),"Ground Rectifier must use gravity");
+				worker.getNavigation().moveTo(destination.x,destination.y,destination.z,1.0);
+			}
+			if (helper.getTick()>60 && worker.position().distanceTo(destination)<2) {
+				helper.assertTrue(worker.onGround(),"Rectifier must reach the destination on foot");
 				helper.succeed();
 			}
 		});

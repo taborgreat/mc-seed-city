@@ -1,0 +1,54 @@
+{
+  "format_version": 2,
+  "header": {
+    "name": "Seed City Showcase data",
+    "description": "Six approved NPCs and mob showcase V1",
+    "uuid": "b2249f4d-de6d-501d-a52c-ea24745217bb",
+    "version": [
+      1,
+      0,
+      0
+    ],
+    "min_engine_version": [
+      1,
+      26,
+      0
+    ]
+  },
+  "modules": [
+    {
+      "type": "data",
+      "uuid": "3c5292d6-9d44-5411-9383-c6423c8dec72",
+      "version": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "type": "script",
+      "language": "javascript",
+      "uuid": "8c9bac3a-9818-5bc7-a399-d7b45a2e5a1c",
+      "version": [
+        1,
+        0,
+        0
+      ],
+      "entry": "scripts/main.js"
+    }
+  ],
+  "dependencies": [
+    {
+      "uuid": "a9fb9db3-aab1-533d-bf75-6f02217f2a1f",
+      "version": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "module_name": "@minecraft/server",
+      "version": "2.0.0"
+    }
+  ]
+}

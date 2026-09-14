@@ -1,0 +1,12 @@
+entity.seedcity:builder.name=Builder
+item.spawn_egg.entity.seedcity:builder.name=Builder Spawn Egg
+entity.seedcity:warden.name=Rectifier
+item.spawn_egg.entity.seedcity:warden.name=Rectifier Spawn Egg
+entity.seedcity:courier.name=Courier
+item.spawn_egg.entity.seedcity:courier.name=Courier Spawn Egg
+entity.seedcity:collector.name=Collector
+item.spawn_egg.entity.seedcity:collector.name=Collector Spawn Egg
+entity.seedcity:sentinel.name=Sentinel
+item.spawn_egg.entity.seedcity:sentinel.name=Sentinel Spawn Egg
+entity.seedcity:redstone_rat.name=Redstone Rat
+item.spawn_egg.entity.seedcity:redstone_rat.name=Redstone Rat Spawn Egg

@@ -50,7 +50,8 @@ dated line to `DECISIONS.md`.
   value without a register, no op without hardware; a card is a plan until its hardware is
   built), analog words everywhere with a saturating comparator ALU, random-per-city zoning
   that must be readable from the air.
-- Mobs: `entity.FlyingCityMob` is the base for Builder and Warden (hovering, city-bound);
+- Mobs: `entity.FlyingCityMob` is the base for Builder (hovering, city-bound); Warden/Rectifier
+  uses PathfinderMob ground navigation at iron-golem stroll speed after Java playtesting;
   `SentinelEntity` walks. Wardens repair by blueprint comparison (`verify.Integrity`), then
   re-queue port verification. Faults are planned slots built minus their `fault` block.
   Config is per city: always read it through `CityState.cfg()`, never the global in city code.

@@ -1,0 +1,52 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.seedcity.collector": {
+      "loop": true,
+      "bones": {
+        "right_leg": {
+          "rotation": [
+            "math.sin(q.anim_time * 380) * 30 * v.walk",
+            0,
+            0
+          ]
+        },
+        "left_leg": {
+          "rotation": [
+            "math.sin(q.anim_time * 380) * -30 * v.walk",
+            0,
+            0
+          ]
+        },
+        "right_arm": {
+          "rotation": [
+            "(q.property('seedcity:pose') == 3 || q.property('seedcity:pose') == 4) ? 45+math.sin(q.anim_time*1200)*40 : math.sin(q.anim_time*380)*-18*v.walk",
+            "(q.property('seedcity:pose') == 3 || q.property('seedcity:pose') == 4) ? math.sin(q.anim_time*1200)*15 : 0",
+            "(q.property('seedcity:pose') == 3 || q.property('seedcity:pose') == 4) ? math.sin(q.anim_time*1200)*-12 : 0"
+          ]
+        },
+        "left_arm": {
+          "rotation": [
+            "math.sin(q.anim_time * 380) * 18 * v.walk",
+            0,
+            0
+          ]
+        },
+        "head": {
+          "rotation": [
+            "q.property('seedcity:pose') == 5 ? 48 + math.sin(q.anim_time*45)*8 : -math.clamp(q.target_x_rotation,-60,30)",
+            "-math.clamp(q.target_y_rotation,-35,35)",
+            0
+          ]
+        },
+        "lantern": {
+          "rotation": [
+            "math.sin(q.anim_time*240)*(2+v.walk*9)",
+            0,
+            "math.sin(q.anim_time*190)*(1+v.walk*5)"
+          ]
+        }
+      }
+    }
+  }
+}

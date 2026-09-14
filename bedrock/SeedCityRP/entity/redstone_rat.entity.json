@@ -1,0 +1,39 @@
+{
+  "format_version": "1.10.0",
+  "minecraft:client_entity": {
+    "description": {
+      "identifier": "seedcity:redstone_rat",
+      "materials": {
+        "default": "entity_alphatest",
+        "glow": "entity_emissive_alpha"
+      },
+      "textures": {
+        "default": "textures/entity/redstone_rat",
+        "glow": "textures/entity/redstone_rat_glow"
+      },
+      "geometry": {
+        "default": "geometry.seedcity.redstone_rat"
+      },
+      "animations": {
+        "main": "animation.seedcity.redstone_rat"
+      },
+      "scripts": {
+        "pre_animation": [
+          "v.walk = (q.property('seedcity:pose') == 2) ? 1.0 : (q.property('seedcity:pose') == 0 ? math.min(q.modified_move_speed * 3.0, 1.0) : 0.0);"
+        ],
+        "animate": [
+          "main"
+        ]
+      },
+      "render_controllers": [
+        "controller.render.seedcity",
+        "controller.render.seedcity_glow"
+      ],
+      "spawn_egg": {
+        "base_color": "#604139",
+        "overlay_color": "#E83D32"
+      },
+      "enable_attachables": false
+    }
+  }
+}

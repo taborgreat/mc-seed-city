@@ -1,6 +1,6 @@
 # gradle
 .gradle/
-build/
+/build/
 out/
 classes/
 
@@ -31,3 +31,7 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# asset-generator caches
+__pycache__/
+*.pyc

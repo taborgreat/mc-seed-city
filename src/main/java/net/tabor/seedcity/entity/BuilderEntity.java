@@ -1,6 +1,9 @@
 package net.tabor.seedcity.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
@@ -20,6 +23,8 @@ import java.util.Optional;
  * cell to the city and moves on. It never decides what to build; the city does.
  */
 public final class BuilderEntity extends FlyingCityMob {
+	private static final EntityDataAccessor<Boolean> BUILDING = SynchedEntityData.defineId(BuilderEntity.class, EntityDataSerializers.BOOLEAN);
+	private static final EntityDataAccessor<Boolean> CARRYING = SynchedEntityData.defineId(BuilderEntity.class, EntityDataSerializers.BOOLEAN);
 	private enum Phase { IDLE, TO_STORAGE, WITHDRAW, TO_SITE, BUILD }
 
 	private BuildTask task;
@@ -36,6 +41,16 @@ public final class BuilderEntity extends FlyingCityMob {
 		return createFlyingAttributes(20.0);
 	}
 
+	@Override
+	protected void defineSynchedData(SynchedEntityData.Builder builder) {
+		super.defineSynchedData(builder);
+		builder.define(BUILDING, false);
+		builder.define(CARRYING, false);
+	}
+
+	public boolean isBuilding() { return entityData.get(BUILDING); }
+	public boolean isCarryingMaterials() { return entityData.get(CARRYING); }
+
 	public String status() {
 		return phase + (task == null ? "" : " " + task.placement() + " " + (int) (task.progress() * 100) + "%");
 	}
@@ -49,6 +64,10 @@ public final class BuilderEntity extends FlyingCityMob {
 			SeedCity.LOGGER.error("Builder {} failed while {}; re-queuing", getUUID(), phase, e);
 			dropTask(level);
 		}
+		// Send only presentation flags. The client never reads the server-only phase/task.
+		boolean active = task != null && city(level).map(c -> !c.frozen()).orElse(false);
+		entityData.set(BUILDING, active && phase == Phase.BUILD);
+		entityData.set(CARRYING, active && (phase == Phase.TO_SITE || phase == Phase.BUILD));
 	}
 
 	private void work(ServerLevel level) {

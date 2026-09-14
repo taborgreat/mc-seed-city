@@ -16,12 +16,18 @@ import net.tabor.seedcity.verify.ProbeBlock;
 public final class SeedCityBlocks {
 	public static Block PROBE;
 	public static Block SEED;
+	public static Block COLLECTOR_LIGHT;
 	public static Item SEED_ITEM;
 
 	private SeedCityBlocks() {
 	}
 
 	public static void init() {
+		ResourceKey<Block> lampKey=ResourceKey.create(Registries.BLOCK,SeedCity.id("collector_light"));
+		COLLECTOR_LIGHT=Registry.register(BuiltInRegistries.BLOCK,lampKey,
+				new net.tabor.seedcity.entity.CollectorLightBlock(BlockBehaviour.Properties.of().setId(lampKey)
+						.noCollision().noOcclusion().noLootTable().replaceable().strength(-1)
+						.lightLevel(s->12).isRedstoneConductor((s,l,p)->false)));
 		ResourceKey<Block> probeKey = ResourceKey.create(Registries.BLOCK, SeedCity.id("probe"));
 		// Not a redstone conductor: otherwise a neighbour's dust or diode behind the probe would be
 		// relayed through it to the port under test, and the probe could never hold the port at 0.

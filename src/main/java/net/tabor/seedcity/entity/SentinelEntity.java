@@ -1,6 +1,9 @@
 package net.tabor.seedcity.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
@@ -35,7 +38,10 @@ public final class SentinelEntity extends PathfinderMob {
 	private CityState.SlotKey slot;
 	private String port = "out";
 	private BlockPos post;
-	private int alertness;
+	private static final EntityDataAccessor<Integer> ALERTNESS=SynchedEntityData.defineId(SentinelEntity.class,EntityDataSerializers.INT);
+    @Override protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);builder.define(ALERTNESS,0);
+    }
 
 	public SentinelEntity(EntityType<? extends SentinelEntity> type, Level level) {
 		super(type, level);
@@ -109,19 +115,19 @@ public final class SentinelEntity extends PathfinderMob {
 	}
 
 	public int alertness() {
-		return alertness;
+		return entityData.get(ALERTNESS);
 	}
 
 	public boolean awake() {
-		return alertness > 0;
+		return alertness() > 0;
 	}
 
 	public boolean hostile() {
-		return alertness >= HOSTILE_AT;
+		return alertness() >= HOSTILE_AT;
 	}
 
 	public String status() {
-		return "sentinel@" + (slot == null ? "?" : slot.toString()) + "." + port + " alertness=" + alertness + (hostile() ? " HOSTILE" : awake() ? " awake" : " asleep");
+		return "sentinel@" + (slot == null ? "?" : slot.toString()) + "." + port + " alertness=" + alertness() + (hostile() ? " HOSTILE" : awake() ? " awake" : " asleep");
 	}
 
 	@Override
@@ -134,7 +140,7 @@ public final class SentinelEntity extends PathfinderMob {
 		super.customServerAiStep(level);
 		int read = readPort(level);
 		if (read >= 0) {
-			alertness = read;
+			entityData.set(ALERTNESS,Math.clamp(read,0,15));
 		}
 		if (!hostile() && getTarget() != null) {
 			setTarget(null);
@@ -170,6 +176,7 @@ public final class SentinelEntity extends PathfinderMob {
 	@Override
 	protected void addAdditionalSaveData(ValueOutput output) {
 		super.addAdditionalSaveData(output);
+		output.putInt("Alertness",alertness());
 		if (cityPos != null) {
 			output.store("City", BlockPos.CODEC, cityPos);
 		}
@@ -186,6 +193,7 @@ public final class SentinelEntity extends PathfinderMob {
 	@Override
 	protected void readAdditionalSaveData(ValueInput input) {
 		super.readAdditionalSaveData(input);
+		entityData.set(ALERTNESS,Math.clamp(input.getIntOr("Alertness",0),0,15));
 		cityPos = input.read("City", BlockPos.CODEC).orElse(null);
 		if (input.getIntOr("SlotX", Integer.MIN_VALUE) != Integer.MIN_VALUE) {
 			slot = new CityState.SlotKey(input.getIntOr("SlotX", 0), input.getIntOr("SlotZ", 0));

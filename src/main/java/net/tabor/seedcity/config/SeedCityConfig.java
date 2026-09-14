@@ -45,6 +45,8 @@ public final class SeedCityConfig {
 	public int wardenSweepTicks = 100;
 	/** Spawn a Sentinel on every built register block. */
 	public boolean sentinelsOnRegisters = true;
+	/** Local cat-style population near each city core; zero disables automatic rats. */
+	public int maxRedstoneRats = 2;
 
 	private static SeedCityConfig current = new SeedCityConfig();
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

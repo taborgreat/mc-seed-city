@@ -1,17 +1,30 @@
 {
-	"schemaVersion": 1,
-	"id": "seedcity-gametest",
-	"version": "0.0.1",
-	"name": "Seed City Gametests",
-	"environment": "*",
-	"entrypoints": {
-		"fabric-gametest": [
-			"net.tabor.seedcity.gametest.CellVerifyTests",
-			"net.tabor.seedcity.gametest.CityGrowthTests",
-			"net.tabor.seedcity.gametest.GuardianTests"
-		]
-	},
-	"depends": {
-		"seedcity": "*"
-	}
+  "schemaVersion": 1,
+  "id": "seedcity-gametest",
+  "version": "0.0.1",
+  "name": "Seed City Gametests",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-client-gametest": [
+      "net.tabor.seedcity.gametest.BuilderClientTest",
+      "net.tabor.seedcity.gametest.RectifierClientTest",
+      "net.tabor.seedcity.gametest.CourierClientTest",
+      "net.tabor.seedcity.gametest.CollectorClientTest",
+      "net.tabor.seedcity.gametest.SentinelClientTest",
+      "net.tabor.seedcity.gametest.RedstoneRatClientTest",
+      "net.tabor.seedcity.gametest.ShowcaseClientTest"
+    ],
+    "fabric-gametest": [
+      "net.tabor.seedcity.gametest.CollectorTests",
+      "net.tabor.seedcity.gametest.CourierTests",
+      "net.tabor.seedcity.gametest.CellVerifyTests",
+      "net.tabor.seedcity.gametest.CityGrowthTests",
+      "net.tabor.seedcity.gametest.GuardianTests",
+      "net.tabor.seedcity.gametest.BuildTaskTests",
+      "net.tabor.seedcity.gametest.RedstoneRatTests"
+    ]
+  },
+  "depends": {
+    "seedcity": "*"
+  }
 }

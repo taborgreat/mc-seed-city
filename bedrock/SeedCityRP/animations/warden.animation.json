@@ -1,0 +1,94 @@
+{
+  "format_version": "1.8.0",
+  "animations": {
+    "animation.seedcity.warden": {
+      "loop": true,
+      "bones": {
+        "right_leg": {
+          "rotation": [
+            "math.sin(q.anim_time * 380) * 30 * v.walk",
+            0,
+            0
+          ]
+        },
+        "left_leg": {
+          "rotation": [
+            "math.sin(q.anim_time * 380) * -30 * v.walk",
+            0,
+            0
+          ]
+        },
+        "right_arm": {
+          "rotation": [
+            "12.6+math.sin(q.anim_time*380)*-3*v.walk",
+            0,
+            0
+          ]
+        },
+        "left_arm": {
+          "rotation": [
+            "(q.property('seedcity:pose') == 3) ? 8.6+v.stroke*60+v.arc*17 : math.sin(q.anim_time*380)*18*v.walk",
+            "(q.property('seedcity:pose') == 3) ? -v.sweep*14 : 0",
+            "(q.property('seedcity:pose') == 3) ? 2-v.arc*14 : 2"
+          ]
+        },
+        "head": {
+          "rotation": [
+            "q.property('seedcity:pose') == 5 ? 48 + math.sin(q.anim_time*45)*8 : -math.clamp(q.target_x_rotation,-60,30)",
+            "-math.clamp(q.target_y_rotation,-35,35)",
+            0
+          ]
+        },
+        "right_forearm": {
+          "rotation": [
+            37.2,
+            0,
+            0
+          ]
+        },
+        "lantern": {
+          "rotation": [
+            "-49.8+math.sin(q.anim_time*380)*3*v.walk",
+            0,
+            0
+          ]
+        },
+        "left_forearm": {
+          "rotation": [
+            40.1,
+            0,
+            0
+          ]
+        },
+        "hammer": {
+          "rotation": [
+            -90,
+            0,
+            0
+          ]
+        },
+        "body": {
+          "rotation": [
+            0,
+            "(q.property('seedcity:pose') == 3) ? -v.sweep*7 : 0",
+            0
+          ]
+        },
+        "cape": {
+          "rotation": [
+            "-3-v.walk*7-math.sin(q.anim_time*140)*(1+v.walk*3)",
+            0,
+            "math.sin(q.anim_time*110)*(1+v.walk)"
+          ]
+        },
+        "tabard": {
+          "rotation": [
+            "4+v.walk*2+math.sin(q.anim_time*180)*(1.4+v.walk*3)",
+            0,
+            "math.sin(q.anim_time*103)*2.5"
+          ]
+        }
+      }
+    }
+  }
+}

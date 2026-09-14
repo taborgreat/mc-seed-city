@@ -1,0 +1,457 @@
+{
+  "format_version": "1.26.0",
+  "minecraft:entity": {
+    "description": {
+      "identifier": "seedcity:sentinel",
+      "is_spawnable": true,
+      "is_summonable": true,
+      "properties": {
+        "seedcity:pose": {
+          "type": "int",
+          "range": [
+            0,
+            16
+          ],
+          "default": 0,
+          "client_sync": true
+        },
+        "seedcity:signal": {
+          "type": "int",
+          "range": [
+            0,
+            15
+          ],
+          "default": 0,
+          "client_sync": true
+        }
+      }
+    },
+    "components": {
+      "minecraft:type_family": {
+        "family": [
+          "sentinel",
+          "mob"
+        ]
+      },
+      "minecraft:health": {
+        "value": 30,
+        "max": 30
+      },
+      "minecraft:collision_box": {
+        "width": 1.1,
+        "height": 2.63
+      },
+      "minecraft:movement": {
+        "value": 0
+      },
+      "minecraft:movement.basic": {},
+      "minecraft:navigation.walk": {
+        "avoid_water": true,
+        "can_path_over_water": false
+      },
+      "minecraft:jump.static": {},
+      "minecraft:physics": {},
+      "minecraft:pushable": {
+        "is_pushable": true,
+        "is_pushable_by_piston": true
+      },
+      "minecraft:persistent": {},
+      "minecraft:nameable": {},
+      "minecraft:behavior.random_stroll": {
+        "priority": 6,
+        "speed_multiplier": 1
+      },
+      "minecraft:behavior.look_at_player": {
+        "priority": 7,
+        "look_distance": 8
+      },
+      "minecraft:behavior.random_look_around": {
+        "priority": 8
+      },
+      "minecraft:knockback_resistance": {
+        "value": 0.5
+      }
+    },
+    "component_groups": {
+      "exhibit": {
+        "minecraft:movement": {
+          "value": 0
+        },
+        "minecraft:flying_speed": {
+          "value": 0
+        },
+        "minecraft:pushable": {
+          "is_pushable": false,
+          "is_pushable_by_piston": false
+        },
+        "minecraft:knockback_resistance": {
+          "value": 1
+        },
+        "minecraft:damage_sensor": {
+          "triggers": [
+            {
+              "cause": "all",
+              "deals_damage": "no"
+            }
+          ]
+        }
+      },
+      "active": {
+        "minecraft:movement": {
+          "value": 0.25
+        }
+      },
+      "hostile": {
+        "minecraft:attack": {
+          "damage": 4
+        },
+        "minecraft:behavior.nearest_attackable_target": {
+          "priority": 2,
+          "must_see": true,
+          "entity_types": [
+            {
+              "filters": {
+                "test": "is_family",
+                "subject": "other",
+                "value": "player"
+              },
+              "max_dist": 24
+            }
+          ]
+        },
+        "minecraft:behavior.melee_attack": {
+          "priority": 3,
+          "speed_multiplier": 1,
+          "track_target": true
+        }
+      }
+    },
+    "events": {
+      "seedcity:pose_sleep": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 1
+        }
+      },
+      "seedcity:pose_alert": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 2
+        }
+      },
+      "seedcity:pose_idle": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 3
+        }
+      },
+      "seedcity:pose_walk": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 4
+        }
+      },
+      "seedcity:pose_run": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 5
+        }
+      },
+      "seedcity:pose_attack": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 6
+        }
+      },
+      "seedcity:pose_look": {
+        "add": {
+          "component_groups": [
+            "exhibit"
+          ]
+        },
+        "set_property": {
+          "seedcity:pose": 7
+        }
+      },
+      "seedcity:signal_0": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": []
+        },
+        "set_property": {
+          "seedcity:signal": 0
+        }
+      },
+      "seedcity:signal_1": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 1
+        }
+      },
+      "seedcity:signal_2": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 2
+        }
+      },
+      "seedcity:signal_3": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 3
+        }
+      },
+      "seedcity:signal_4": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 4
+        }
+      },
+      "seedcity:signal_5": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 5
+        }
+      },
+      "seedcity:signal_6": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 6
+        }
+      },
+      "seedcity:signal_7": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 7
+        }
+      },
+      "seedcity:signal_8": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 8
+        }
+      },
+      "seedcity:signal_9": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 9
+        }
+      },
+      "seedcity:signal_10": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 10
+        }
+      },
+      "seedcity:signal_11": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 11
+        }
+      },
+      "seedcity:signal_12": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 12
+        }
+      },
+      "seedcity:signal_13": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 13
+        }
+      },
+      "seedcity:signal_14": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 14
+        }
+      },
+      "seedcity:signal_15": {
+        "remove": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "add": {
+          "component_groups": [
+            "active",
+            "hostile"
+          ]
+        },
+        "set_property": {
+          "seedcity:signal": 15
+        }
+      }
+    }
+  }
+}

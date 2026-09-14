@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "seedcity:item/courier_spawn_egg"
+  }
+}

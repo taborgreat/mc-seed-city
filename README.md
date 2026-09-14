@@ -1,5 +1,12 @@
 # Seed City
 
+NPC fork handoff: [mob showcase V1 integration notes](docs/mob-showcase-v1.md),
+[installable mod files](distribution),
+[five-page integration guide](docs/Tabor-Integration-Guide.pdf), and
+[showcase screenshots](art/showcase). Six Creative spawn eggs are included.
+The separate [Bedrock add-on](bedrock) is a server-tested integration candidate;
+Bedrock client visuals still need review. Java targets Minecraft 26.2.
+
 A Minecraft mod where a working redstone city grows itself from a seed, is built and maintained
 by mobs, and can be steered by the player.
 

@@ -10,3 +10,22 @@ gradlew text eol=lf
 *.png binary
 *.jar binary
 *.pdf binary
+
+# Keep merge review focused on authored changes; these remain expandable on GitHub.
+tools/vendor/** linguist-vendored
+art/builder/builder-preview.html linguist-generated
+art/builder/builder.bbmodel linguist-generated
+art/builder/builder.geometry.json linguist-generated
+src/client/java/net/tabor/seedcity/client/BuilderMesh.java linguist-generated
+art/rectifier/rectifier-preview.html linguist-generated
+art/rectifier/rectifier.bbmodel linguist-generated
+art/rectifier/rectifier.geometry.json linguist-generated
+src/client/java/net/tabor/seedcity/client/RectifierMesh.java linguist-generated
+art/courier/courier-preview.html linguist-generated
+art/courier/courier.bbmodel linguist-generated
+art/courier/courier.geometry.json linguist-generated
+src/client/java/net/tabor/seedcity/client/CourierMesh.java linguist-generated
+art/collector/collector-preview.html linguist-generated
+art/collector/collector.bbmodel linguist-generated
+art/collector/collector.geometry.json linguist-generated
+src/client/java/net/tabor/seedcity/client/CollectorMesh.java linguist-generated

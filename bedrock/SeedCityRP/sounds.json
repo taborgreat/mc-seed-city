@@ -1,0 +1,18 @@
+{
+  "entity_sounds": {
+    "entities": {
+      "seedcity:redstone_rat": {
+        "events": {
+          "ambient": "mob.silverfish.say",
+          "hurt": "mob.silverfish.hit",
+          "death": "mob.silverfish.kill"
+        },
+        "volume": 0.25,
+        "pitch": [
+          0.9,
+          1.1
+        ]
+      }
+    }
+  }
+}

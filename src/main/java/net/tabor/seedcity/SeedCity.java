@@ -32,6 +32,8 @@ public final class SeedCity implements ModInitializer {
 		SeedCityConfig.load();
 		SeedCityBlocks.init();
 		SeedCityEntities.init();
+		SeedCityItems.init();
+		net.tabor.seedcity.entity.ShowcaseRoaming.init();
 		CellLibrary.init();
 		Verifier.init();
 		CityManager.init();

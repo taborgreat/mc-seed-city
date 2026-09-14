@@ -1,0 +1,38 @@
+{
+  "format_version": "1.8.0",
+  "render_controllers": {
+    "controller.render.seedcity_sentinel_glow": {
+      "arrays": {
+        "textures": {
+          "Array.glows": [
+            "Texture.glow0",
+            "Texture.glow1",
+            "Texture.glow2",
+            "Texture.glow3",
+            "Texture.glow4",
+            "Texture.glow5",
+            "Texture.glow6",
+            "Texture.glow7",
+            "Texture.glow8",
+            "Texture.glow9",
+            "Texture.glow10",
+            "Texture.glow11",
+            "Texture.glow12",
+            "Texture.glow13",
+            "Texture.glow14",
+            "Texture.glow15"
+          ]
+        }
+      },
+      "geometry": "Geometry.default",
+      "materials": [
+        {
+          "*": "Material.glow"
+        }
+      ],
+      "textures": [
+        "Array.glows[q.property('seedcity:pose') == 1 ? 0 : (q.property('seedcity:pose') == 2 ? 7 : (q.property('seedcity:pose') > 0 ? 15 : q.property('seedcity:signal')))]"
+      ]
+    }
+  }
+}
