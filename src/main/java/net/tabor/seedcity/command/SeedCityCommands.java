@@ -85,7 +85,21 @@ public final class SeedCityCommands {
 				.then(Commands.literal("plant").executes(c -> plant(c.getSource())))
 				.then(Commands.literal("city").executes(c -> city(c.getSource())))
 				.then(Commands.literal("slots").executes(c -> slots(c.getSource())))
-				.then(Commands.literal("graph").executes(c -> graph(c.getSource()))));
+				.then(Commands.literal("graph").executes(c -> graph(c.getSource())))
+				.then(Commands.literal("card")
+						.then(Commands.argument("name", com.mojang.brigadier.arguments.StringArgumentType.word())
+								.suggests((c, b) -> SharedSuggestionProvider.suggest(net.tabor.seedcity.card.CardLibrary.names(), b))
+								.executes(c -> card(c.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(c, "name")))))
+				.then(Commands.literal("insert")
+						.then(Commands.argument("name", com.mojang.brigadier.arguments.StringArgumentType.word())
+								.suggests((c, b) -> SharedSuggestionProvider.suggest(net.tabor.seedcity.card.CardLibrary.names(), b))
+								.executes(c -> insert(c.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(c, "name")))))
+				.then(Commands.literal("eject").executes(c -> eject(c.getSource())))
+				.then(Commands.literal("reader").executes(c -> reader(c.getSource())))
+				.then(Commands.literal("blueprint")
+						.then(Commands.argument("cell", IdentifierArgument.id())
+								.suggests((c, b) -> SharedSuggestionProvider.suggestResource(CellLibrary.ids(), b))
+								.executes(c -> blueprint(c)))));
 	}
 
 	private static Rotation rotation(CommandContext<CommandSourceStack> c) {
@@ -254,6 +268,13 @@ public final class SeedCityCommands {
 		for (SentinelEntity s : c.sentinels(level)) {
 			source.sendSuccess(() -> Component.literal("  " + s.status() + " at " + s.blockPosition().toShortString()), false);
 		}
+		for (net.tabor.seedcity.entity.CourierEntity k : c.couriers(level)) {
+			source.sendSuccess(() -> Component.literal("  " + k.status() + " at " + k.blockPosition().toShortString()), false);
+		}
+		if (!c.lastBlueprintResult().isEmpty()) {
+			source.sendSuccess(() -> Component.literal("  last blueprint: " + c.lastBlueprintResult()), false);
+		}
+		source.sendSuccess(() -> Component.literal("  districts: " + c.districts() + ", mail pending " + c.pendingMail()), false);
 		for (String d : c.districts()) {
 			if (c.districtHasFault(d)) {
 				source.sendSuccess(() -> Component.literal("  district " + d + " is DARK: open fault, no warden"), false);
@@ -319,6 +340,99 @@ public final class SeedCityCommands {
 			source.sendSuccess(() -> Component.literal("  " + line), false);
 		}
 		return edges;
+	}
+
+	/** Gives the caller a written book holding a built-in card, ready for the Card Reader. */
+	private static int card(CommandSourceStack source, String name) {
+		Optional<String> text = net.tabor.seedcity.card.CardLibrary.get(name);
+		if (text.isEmpty()) {
+			source.sendFailure(Component.literal("No card named " + name + ". Cards: " + String.join(", ", net.tabor.seedcity.card.CardLibrary.names())));
+			return 0;
+		}
+		net.minecraft.server.level.ServerPlayer player = source.getPlayer();
+		if (player == null) {
+			source.sendFailure(Component.literal("Only players can hold cards."));
+			return 0;
+		}
+		net.minecraft.world.item.ItemStack book = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WRITTEN_BOOK);
+		List<net.minecraft.server.network.Filterable<Component>> pages = new ArrayList<>();
+		pages.add(net.minecraft.server.network.Filterable.passThrough(Component.literal(text.get())));
+		book.set(net.minecraft.core.component.DataComponents.WRITTEN_BOOK_CONTENT,
+				new net.minecraft.world.item.component.WrittenBookContent(net.minecraft.server.network.Filterable.passThrough(name), "Seed City", 0, pages, true));
+		if (!player.getInventory().add(book)) {
+			player.drop(book, false);
+		}
+		source.sendSuccess(() -> Component.literal("Card '" + name + "'. Right-click the Card Reader in a Core with it."), false);
+		return 1;
+	}
+
+	/** Dev shortcut: insert a built-in card straight into the nearest city. */
+	private static int insert(CommandSourceStack source, String name) {
+		Optional<String> text = net.tabor.seedcity.card.CardLibrary.get(name);
+		if (text.isEmpty()) {
+			source.sendFailure(Component.literal("No card named " + name));
+			return 0;
+		}
+		ServerLevel level = source.getLevel();
+		Optional<CityState> city = CityManager.get(level).nearest(BlockPos.containing(source.getPosition()));
+		if (city.isEmpty()) {
+			source.sendFailure(Component.literal("No city in this dimension."));
+			return 0;
+		}
+		CityState.CardResult r = city.get().insertCard(level, text.get(), net.minecraft.world.item.ItemStack.EMPTY);
+		CityManager.get(level).touch();
+		if (r.accepted()) {
+			source.sendSuccess(() -> Component.literal(r.message()), true);
+			return 1;
+		}
+		source.sendFailure(Component.literal(r.message()));
+		return 0;
+	}
+
+	private static int eject(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		Optional<CityState> city = CityManager.get(level).nearest(BlockPos.containing(source.getPosition()));
+		if (city.isEmpty()) {
+			source.sendFailure(Component.literal("No city in this dimension."));
+			return 0;
+		}
+		net.minecraft.world.item.ItemStack card = city.get().ejectCard(level);
+		CityManager.get(level).touch();
+		net.minecraft.server.level.ServerPlayer player = source.getPlayer();
+		if (player != null && !card.isEmpty() && !player.getInventory().add(card)) {
+			player.drop(card, false);
+		}
+		source.sendSuccess(() -> Component.literal("Card ejected. " + city.get().programSummary()), true);
+		return 1;
+	}
+
+	private static int reader(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		Optional<CityState> city = CityManager.get(level).nearest(BlockPos.containing(source.getPosition()));
+		if (city.isEmpty()) {
+			source.sendFailure(Component.literal("No city in this dimension."));
+			return 0;
+		}
+		for (String line : city.get().readerLines()) {
+			source.sendSuccess(() -> Component.literal(line), false);
+		}
+		return 1;
+	}
+
+	/** Gives the caller a blueprint for a cell. Hand it to a Builder. */
+	private static int blueprint(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
+		Cell cell = cell(c);
+		net.minecraft.server.level.ServerPlayer player = c.getSource().getPlayer();
+		if (player == null) {
+			c.getSource().sendFailure(Component.literal("Only players can hold blueprints."));
+			return 0;
+		}
+		net.minecraft.world.item.ItemStack stack = net.tabor.seedcity.SeedCityItems.blueprint(cell.id().getPath());
+		if (!player.getInventory().add(stack)) {
+			player.drop(stack, false);
+		}
+		c.getSource().sendSuccess(() -> Component.literal("Blueprint for " + cell.id().getPath() + ". Right-click a Builder with it where you want the cell."), false);
+		return 1;
 	}
 
 	private static int slots(CommandSourceStack source) {

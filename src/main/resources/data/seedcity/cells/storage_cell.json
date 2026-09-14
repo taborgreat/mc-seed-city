@@ -4,7 +4,7 @@
   "size": [7, 5, 7],
   "ports": [],
   "truth": "none",
-  "weights": { "core": 2, "residential": 3, "forge": 2, "plaza": 2 },
+  "weights": { "core": 2, "residential": 1, "forge": 1, "plaza": 1, "ram": 0, "storage": 8 },
   "cost": { "redstone": 0, "stone": 90, "wood": 40 },
   "setpiece": true
 }

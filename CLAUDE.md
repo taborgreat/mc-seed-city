@@ -54,7 +54,14 @@ dated line to `DECISIONS.md`.
   `SentinelEntity` walks. Wardens repair by blueprint comparison (`verify.Integrity`), then
   re-queue port verification. Faults are planned slots built minus their `fault` block.
   Config is per city: always read it through `CityState.cfg()`, never the global in city code.
-- Phases 0, 1 and 2 done 2026-09-13. Current phase: 3 (the Core, punch cards, L1 behaviour
-  scripts, the Reader wall), designed to `docs/city-as-computer.md`: analog words, saturating
-  comparator ALU, registers read and written through their ports, a card is a plan until its
-  hardware exists. Acceptance is design doc section 25, phase 3.
+- Cards: `card.CardParser` (pure, tested), `core.Executor` (resolve + run: binds registers by
+  ordinal, ALU ops to cells, ports by `type.N.port`; one instruction per clock beat; drives
+  ports via Core terminals), `core.CardReaderBlock`, `core.ReaderWall`. Language reference in
+  `docs/cards.md`. Twelve ops, no more.
+- Districts are angular sectors from the city seed (`CityState.district`); cell weights per
+  district live in `cellgen/Cells.java` and are the tuning knob for what grows where. Couriers
+  (`entity.CourierEntity`) carry OUT/IN outside the core district via `CityState.post`; Core
+  terminals still reach registers and ALU cells. Blueprints: `SeedCityItems`, `BuilderEntity.acceptBlueprint`.
+- Phases 0 to 4 done (2026-09-13/14). Current phase: 5 (terrain blending and the city as a
+  biome, containment polish, L3 self-authored cards; then bus streets with select lanes, and the
+  Foundry from `docs/language-of-growth.md`). Acceptance is design doc section 25, phase 5.

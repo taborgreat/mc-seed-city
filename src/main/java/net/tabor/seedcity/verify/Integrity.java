@@ -75,7 +75,8 @@ public final class Integrity {
 			}
 			BlockPos world = p.origin().offset(b.pos());
 			BlockState actual = level.getBlockState(world);
-			if (actual.is(SeedCityBlocks.PROBE) || actual.is(Blocks.PISTON_HEAD) || actual.is(Blocks.MOVING_PISTON)) {
+			if (actual.is(SeedCityBlocks.PROBE) || actual.is(SeedCityBlocks.TERMINAL)
+					|| actual.is(Blocks.PISTON_HEAD) || actual.is(Blocks.MOVING_PISTON)) {
 				continue;
 			}
 			if (!equivalent(b.state(), actual)) {

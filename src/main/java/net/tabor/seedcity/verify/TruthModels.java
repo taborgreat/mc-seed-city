@@ -31,6 +31,10 @@ public final class TruthModels {
 		register(new Sensor());
 		register(new Clock());
 		register(new None());
+		register(new Analog("sub", (a, b) -> Math.max(a - b, 0)));
+		register(new Analog("max", Math::max));
+		register(new Analog("min", Math::min));
+		register(new Complement());
 	}
 
 	private TruthModels() {
@@ -491,6 +495,78 @@ public final class TruthModels {
 				}
 				if (transitions < 2 || !sawOn || !sawOff) {
 					return Optional.of("port " + out.name() + ": no oscillation (" + transitions + " transitions in " + s.trace().size() + " ticks)");
+				}
+			}
+			return Optional.empty();
+		}
+	}
+
+	/**
+	 * Two-input analog function on strengths: ports a, b (4-bit in) and out. The analog ALU cells
+	 * of docs/city-as-computer.md: sub (saturating), max (OR), min (AND).
+	 */
+	static final class Analog implements TruthModel {
+		private final String name;
+		private final java.util.function.IntBinaryOperator f;
+
+		Analog(String name, java.util.function.IntBinaryOperator f) {
+			this.name = name;
+			this.f = f;
+		}
+
+		public String name() {
+			return name;
+		}
+
+		public List<Map<String, Integer>> stimuli(CellDefinition def) {
+			List<Map<String, Integer>> s = new ArrayList<>();
+			for (int a : FOUR_BIT_LEVELS) {
+				for (int b : FOUR_BIT_LEVELS) {
+					s.add(vec("a", a, "b", b));
+				}
+			}
+			return s;
+		}
+
+		public Optional<String> judge(CellDefinition def, List<Sample> samples) {
+			Port out = def.port("out");
+			if (def.port("a") == null || def.port("b") == null || out == null) {
+				return Optional.of(name + " model needs ports named a, b, out");
+			}
+			for (Sample s : samples) {
+				int expected = f.applyAsInt(s.in("a"), s.in("b"));
+				Optional<String> m = mismatch(out, expected, s, "for a=" + s.in("a") + " b=" + s.in("b"));
+				if (m.isPresent()) {
+					return m;
+				}
+			}
+			return Optional.empty();
+		}
+	}
+
+	/** Port a (4-bit in) and out: out = 15 - a. The analog NOT. */
+	static final class Complement implements TruthModel {
+		public String name() {
+			return "complement";
+		}
+
+		public List<Map<String, Integer>> stimuli(CellDefinition def) {
+			List<Map<String, Integer>> s = new ArrayList<>();
+			for (int a : FOUR_BIT_LEVELS) {
+				s.add(vec("a", a));
+			}
+			return s;
+		}
+
+		public Optional<String> judge(CellDefinition def, List<Sample> samples) {
+			Port out = def.port("out");
+			if (def.port("a") == null || out == null) {
+				return Optional.of("complement model needs ports named a, out");
+			}
+			for (Sample s : samples) {
+				Optional<String> m = mismatch(out, 15 - s.in("a"), s, "for a=" + s.in("a"));
+				if (m.isPresent()) {
+					return m;
 				}
 			}
 			return Optional.empty();

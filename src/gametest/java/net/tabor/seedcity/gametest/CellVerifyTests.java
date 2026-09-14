@@ -86,9 +86,29 @@ public final class CellVerifyTests {
 		verifyCell(helper, "junction", Rotation.CLOCKWISE_180);
 	}
 
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void aluSub(GameTestHelper helper) {
+		verifyCell(helper, "alu_sub", Rotation.NONE);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void aluNot(GameTestHelper helper) {
+		verifyCell(helper, "alu_not", Rotation.CLOCKWISE_90);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void aluOr(GameTestHelper helper) {
+		verifyCell(helper, "alu_or", Rotation.NONE);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void vault(GameTestHelper helper) {
+		verifyCell(helper, "vault", Rotation.NONE);
+	}
+
 	@GameTest(structure = ARENA, maxTicks = 40)
 	public void libraryLoadsAllCells(GameTestHelper helper) {
-		helper.assertTrue(CellLibrary.all().size() >= 11, "expected at least eleven cells loaded, got " + CellLibrary.all().size());
+		helper.assertTrue(CellLibrary.all().size() >= 15, "expected at least fifteen cells loaded, got " + CellLibrary.all().size());
 		helper.assertTrue(CellLibrary.errors().isEmpty(), "library rejected: " + CellLibrary.errors());
 		helper.succeed();
 	}

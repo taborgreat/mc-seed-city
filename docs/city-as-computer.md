@@ -1,6 +1,6 @@
 # The city as a computer
 
-Design addendum, September 2026. Status: **decided** (Tabor, 2026-09-13). Nothing here changes
+Design addendum, September 2026. Status: **decided** (Tabor, 2026-09-13); Phases 3 and 4 are built to it, except the bus and select lanes, which are still to come. Nothing here changes
 Phase 2. It governs Phases 3 to 5 and everything after.
 
 ## The idea

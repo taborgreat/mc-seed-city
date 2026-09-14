@@ -11,5 +11,6 @@ public final class SeedCityClient implements ClientModInitializer {
 		EntityRendererRegistry.register(SeedCityEntities.BUILDER, BuilderRenderer::new);
 		EntityRendererRegistry.register(SeedCityEntities.WARDEN, WardenRenderer::new);
 		EntityRendererRegistry.register(SeedCityEntities.SENTINEL, SentinelRenderer::new);
+		EntityRendererRegistry.register(SeedCityEntities.COURIER, CourierRenderer::new);
 	}
 }

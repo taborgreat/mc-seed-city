@@ -34,6 +34,7 @@ public final class CellBuilder {
 	private final Map<String, Integer> cost = new LinkedHashMap<>();
 	private boolean setpiece = true;
 	private int[] fault;
+	private String loot;
 
 	public CellBuilder(String id, int sx, int sy, int sz) {
 		this.id = id;
@@ -73,6 +74,12 @@ public final class CellBuilder {
 
 	public CellBuilder setpiece(boolean s) {
 		this.setpiece = s;
+		return this;
+	}
+
+	/** Loot table every chest in this cell is filled from when a Builder places it. */
+	public CellBuilder loot(String lootTable) {
+		this.loot = lootTable;
 		return this;
 	}
 
@@ -329,6 +336,9 @@ public final class CellBuilder {
 		sb.append("  \"cost\": ").append(mapJson(cost)).append(",\n");
 		if (fault != null) {
 			sb.append("  \"fault\": [").append(fault[0]).append(", ").append(fault[1]).append(", ").append(fault[2]).append("],\n");
+		}
+		if (loot != null) {
+			sb.append("  \"loot\": \"").append(loot).append("\",\n");
 		}
 		sb.append("  \"setpiece\": ").append(setpiece).append("\n");
 		sb.append("}\n");

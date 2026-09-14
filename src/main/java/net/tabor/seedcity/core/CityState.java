@@ -7,6 +7,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -22,6 +23,7 @@ import net.tabor.seedcity.cell.Port;
 import net.tabor.seedcity.cell.PortDir;
 import net.tabor.seedcity.config.SeedCityConfig;
 import net.tabor.seedcity.entity.BuilderEntity;
+import net.tabor.seedcity.entity.CourierEntity;
 import net.tabor.seedcity.entity.SeedCityEntities;
 import net.tabor.seedcity.entity.SentinelEntity;
 import net.tabor.seedcity.entity.WardenEntity;
@@ -118,6 +120,8 @@ public final class CityState {
 		public UUID builder;
 		/** Verification attempts spent on the current cell. Not persisted. */
 		public int retries;
+		/** 1-based build order among cells of the same type; how cards name a cell (bridge.2.in). */
+		public int ordinal;
 
 		Slot(SlotKey key, SlotStatus status) {
 			this.key = key;
@@ -138,7 +142,7 @@ public final class CityState {
 	}
 
 	private record SlotData(int x, int z, String status, Optional<Identifier> cell, Rotation rotation, List<String> rejected,
-							long since, String note, boolean faulted, boolean guarded) {
+							long since, String note, boolean faulted, boolean guarded, int ordinal) {
 		static final Codec<SlotData> CODEC = RecordCodecBuilder.create(i -> i.group(
 				Codec.INT.fieldOf("x").forGetter(SlotData::x),
 				Codec.INT.fieldOf("z").forGetter(SlotData::z),
@@ -149,12 +153,13 @@ public final class CityState {
 				Codec.LONG.optionalFieldOf("since", 0L).forGetter(SlotData::since),
 				Codec.STRING.optionalFieldOf("note", "").forGetter(SlotData::note),
 				Codec.BOOL.optionalFieldOf("faulted", false).forGetter(SlotData::faulted),
-				Codec.BOOL.optionalFieldOf("guarded", false).forGetter(SlotData::guarded)
+				Codec.BOOL.optionalFieldOf("guarded", false).forGetter(SlotData::guarded),
+				Codec.INT.optionalFieldOf("ordinal", 0).forGetter(SlotData::ordinal)
 		).apply(i, SlotData::new));
 
 		static SlotData of(Slot s) {
 			return new SlotData(s.key.x(), s.key.z(), s.status.name(), Optional.ofNullable(s.cell), s.rotation,
-					List.copyOf(s.rejected), s.since, s.note, s.faulted, s.guarded);
+					List.copyOf(s.rejected), s.since, s.note, s.faulted, s.guarded, s.ordinal);
 		}
 
 		Slot toSlot() {
@@ -166,11 +171,20 @@ public final class CityState {
 			s.note = note;
 			s.faulted = faulted;
 			s.guarded = guarded;
+			s.ordinal = ordinal;
 			if (s.status == SlotStatus.BUILDING || s.status == SlotStatus.VERIFY) {
 				s.status = SlotStatus.PLANNED;   // re-run the task after a reload; correct blocks are skipped
 			}
 			return s;
 		}
+	}
+
+	/** A Core terminal and the block it replaced, so ejecting the card restores the street. */
+	private record TerminalData(BlockPos pos, BlockState saved) {
+		static final Codec<TerminalData> CODEC = RecordCodecBuilder.create(i -> i.group(
+				BlockPos.CODEC.fieldOf("pos").forGetter(TerminalData::pos),
+				BlockState.CODEC.fieldOf("saved").forGetter(TerminalData::saved)
+		).apply(i, TerminalData::new));
 	}
 
 	public static final Codec<CityState> CODEC = RecordCodecBuilder.create(i -> i.group(
@@ -181,7 +195,10 @@ public final class CityState {
 			Codec.INT.fieldOf("redstone").forGetter(c -> c.redstone),
 			Codec.INT.fieldOf("stone").forGetter(c -> c.stone),
 			Codec.INT.fieldOf("wood").forGetter(c -> c.wood),
-			SlotData.CODEC.listOf().fieldOf("slots").forGetter(c -> c.slots.values().stream().map(SlotData::of).toList())
+			SlotData.CODEC.listOf().fieldOf("slots").forGetter(c -> c.slots.values().stream().map(SlotData::of).toList()),
+			Codec.STRING.optionalFieldOf("card", "").forGetter(c -> c.cardText == null ? "" : c.cardText),
+			ItemStack.OPTIONAL_CODEC.optionalFieldOf("card_item", ItemStack.EMPTY).forGetter(c -> c.cardItem),
+			TerminalData.CODEC.listOf().optionalFieldOf("terminals", List.of()).forGetter(c -> c.terminals.entrySet().stream().map(e -> new TerminalData(e.getKey(), e.getValue())).toList())
 	).apply(i, CityState::new));
 
 	private final BlockPos seedPos;
@@ -192,6 +209,15 @@ public final class CityState {
 	private int stone;
 	private int wood;
 	private final Map<SlotKey, Slot> slots = new LinkedHashMap<>();
+	/** The inserted card's text and item; empty when the city runs its hardware default. */
+	private String cardText;
+	private ItemStack cardItem = ItemStack.EMPTY;
+	/** Terminal positions and what stood there before. Persisted. */
+	private final Map<BlockPos, BlockState> terminals = new LinkedHashMap<>();
+	/** The running or planned program. Rebuilt from cardText after a reload. Not persisted. */
+	private Executor executor;
+	private String cardError;
+	private boolean programRestorePending;
 	/** Finished cells waiting for their turn under the verifier. Not persisted. */
 	private final List<BuildTask> pendingVerify = new ArrayList<>();
 	private SlotKey verifyingSlot;
@@ -200,7 +226,8 @@ public final class CityState {
 	/** Per-city config, set by tests or tools; null means the global config. Not persisted. */
 	private SeedCityConfig configOverride;
 
-	private CityState(BlockPos seedPos, long citySeed, boolean frozen, int builtCount, int redstone, int stone, int wood, List<SlotData> slotData) {
+	private CityState(BlockPos seedPos, long citySeed, boolean frozen, int builtCount, int redstone, int stone, int wood, List<SlotData> slotData,
+					  String card, ItemStack cardItem, List<TerminalData> terminalData) {
 		this.seedPos = seedPos;
 		this.citySeed = citySeed;
 		this.frozen = frozen;
@@ -212,6 +239,16 @@ public final class CityState {
 			Slot s = d.toSlot();
 			slots.put(s.key, s);
 		}
+		this.cardText = card.isEmpty() ? null : card;
+		this.cardItem = cardItem;
+		for (TerminalData t : terminalData) {
+			terminals.put(t.pos(), t.saved());
+		}
+		this.programRestorePending = this.cardText != null;
+	}
+
+	private CityState(BlockPos seedPos, long citySeed, int redstone, int stone, int wood) {
+		this(seedPos, citySeed, false, 0, redstone, stone, wood, List.of(), "", ItemStack.EMPTY, List.of());
 	}
 
 	/**
@@ -221,7 +258,7 @@ public final class CityState {
 	 */
 	public static CityState create(long worldSeed, BlockPos seedPos, SeedCityConfig cfg) {
 		long citySeed = cfg.citySeedOverride != 0 ? cfg.citySeedOverride : mix(worldSeed ^ seedPos.asLong());
-		CityState c = new CityState(seedPos, citySeed, false, 0, cfg.initialRedstone, cfg.initialStone, cfg.initialWood, List.of());
+		CityState c = new CityState(seedPos, citySeed, cfg.initialRedstone, cfg.initialStone, cfg.initialWood);
 		c.forceRoot();
 		return c;
 	}
@@ -234,7 +271,8 @@ public final class CityState {
 
 	/** A throwaway city used to prove the planner is deterministic and plants faults. */
 	public static List<String> previewPlan(long citySeed, int count, SeedCityConfig cfg) {
-		CityState c = new CityState(BlockPos.ZERO, citySeed, false, 0, cfg.initialRedstone, cfg.initialStone, cfg.initialWood, List.of());
+		CityState c = new CityState(BlockPos.ZERO, citySeed, cfg.initialRedstone, cfg.initialStone, cfg.initialWood);
+		c.overrideConfig(cfg);
 		c.forceRoot();
 		c.planAhead(k -> true, count, cfg);
 		List<String> out = new ArrayList<>();
@@ -318,13 +356,31 @@ public final class CityState {
 		return s == null ? Optional.empty() : placement(s);
 	}
 
-	/** Districts are distance bands until Phase 4 makes them functional zones. */
+	private String[] sectors;
+	private double sectorOffset;
+
+	/**
+	 * Functional zoning (docs/city-as-computer.md, decision 3): the core is the ring around the
+	 * Seed; beyond it the city is cut into angular sectors, each a district (Forge, RAM, Storage,
+	 * residential, plaza), shuffled and rotated by the city seed. Random per city, readable from
+	 * the air through what grows there.
+	 */
 	public String district(SlotKey k) {
-		int d = k.chebyshev();
-		if (d <= 1) {
+		if (k.chebyshev() <= 1) {
 			return "core";
 		}
-		return d == 2 ? "plaza" : "residential";
+		if (sectors == null) {
+			List<String> names = new ArrayList<>(List.of("forge", "ram", "storage", "residential", "plaza"));
+			Random rng = new Random(mix(citySeed ^ 0x5EC70125L));
+			java.util.Collections.shuffle(names, rng);
+			int n = Math.max(1, Math.min(names.size(), cfg().sectors));
+			sectors = names.subList(0, n).toArray(new String[0]);
+			sectorOffset = rng.nextDouble() * Math.PI * 2;
+		}
+		double angle = Math.atan2(k.z(), k.x()) + sectorOffset;
+		double turn = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / (Math.PI * 2);
+		int idx = Math.min(sectors.length - 1, (int) Math.floor(turn * sectors.length));
+		return sectors[idx];
 	}
 
 	/** Built slots of a district, nearest the core first. */
@@ -359,14 +415,338 @@ public final class CityState {
 		return false;
 	}
 
-	/** Reads a port of a built cell: the strength its port block emits. -1 when unavailable. */
-	public int readPort(SlotKey k, String port) {
+	/** Built slots of one cell type (by id path), in build order. */
+	public List<Slot> builtOfType(String type) {
+		List<Slot> out = new ArrayList<>();
+		for (Slot s : slots.values()) {
+			if (s.status == SlotStatus.BUILT && s.cell != null && s.cell.getPath().equals(type)) {
+				out.add(s);
+			}
+		}
+		out.sort(Comparator.comparingInt(s -> s.ordinal));
+		return out;
+	}
+
+	private void assignOrdinal(Slot s) {
+		if (s.ordinal > 0 || s.cell == null) {
+			return;
+		}
+		int max = 0;
+		for (Slot o : slots.values()) {
+			if (o != s && s.cell.equals(o.cell)) {
+				max = Math.max(max, o.ordinal);
+			}
+		}
+		s.ordinal = max + 1;
+	}
+
+	// ---- ports, terminals, the clock ----------------------------------------------------------
+
+	public Optional<Placement.WorldPort> worldPort(SlotKey k, String port) {
 		Optional<Placement> p = placement(k);
 		if (p.isEmpty()) {
+			return Optional.empty();
+		}
+		for (Placement.WorldPort wp : p.get().ports()) {
+			if (wp.port().name().equals(port)) {
+				return Optional.of(wp);
+			}
+		}
+		return Optional.empty();
+	}
+
+	/** Reads a port of a built cell: the strength its port block emits outward. -1 when unavailable. */
+	public int readPort(SlotKey k, String port) {
+		if (level == null) {
 			return -1;
 		}
-		return -1;
+		Optional<Placement.WorldPort> wp = worldPort(k, port);
+		if (wp.isEmpty()) {
+			return -1;
+		}
+		return level.getSignal(wp.get().pos(), wp.get().face().getOpposite());
 	}
+
+	/** The Clock Tower's output right now; 0 when there is no built clock. The program's heartbeat. */
+	public int clockSignal(ServerLevel level) {
+		this.level = level;
+		Slot clock = slots.get(new SlotKey(0, 1));
+		if (clock == null || clock.status != SlotStatus.BUILT) {
+			return 0;
+		}
+		return Math.max(0, readPort(clock.key, "out"));
+	}
+
+	/**
+	 * Drives an input port with a Core terminal: a directional signal block just outside the port,
+	 * replacing whatever was there (a neighbour's output, a wall, air), which is saved and comes
+	 * back when the card is ejected. Until buses exist this is how the Core reaches the city.
+	 */
+	public void driveTerminal(ServerLevel level, SlotKey k, String port, int power) {
+		Optional<Placement.WorldPort> wp = worldPort(k, port);
+		if (wp.isEmpty()) {
+			return;
+		}
+		BlockPos outside = wp.get().outside();
+		if (!terminals.containsKey(outside)) {
+			terminals.put(outside, level.getBlockState(outside));
+		}
+		BlockState state = SeedCityBlocks.TERMINAL.defaultBlockState()
+				.setValue(net.tabor.seedcity.verify.ProbeBlock.POWER, Math.max(0, Math.min(15, power)))
+				.setValue(net.tabor.seedcity.verify.ProbeBlock.FACING, wp.get().face().getOpposite());
+		if (!level.getBlockState(outside).equals(state)) {
+			level.setBlock(outside, state, net.minecraft.world.level.block.Block.UPDATE_ALL);
+		}
+	}
+
+	private void clearTerminals(ServerLevel level) {
+		for (Map.Entry<BlockPos, BlockState> e : terminals.entrySet()) {
+			if (level.getBlockState(e.getKey()).is(SeedCityBlocks.TERMINAL)) {
+				level.setBlock(e.getKey(), e.getValue(), net.minecraft.world.level.block.Block.UPDATE_ALL);
+			}
+		}
+		terminals.clear();
+		outbox.clear();
+		mail.clear();
+	}
+
+	public boolean isTerminal(BlockPos pos) {
+		return terminals.containsKey(pos);
+	}
+
+	// ---- couriers: OUT and IN across districts ------------------------------------------------
+
+	/** A letter: drive {@code slot.port} with {@code value}, or read it back under {@code ticket}. */
+	public record Mail(long ticket, SlotKey slot, String port, int value, boolean read) {
+	}
+
+	private final java.util.ArrayDeque<Mail> mail = new java.util.ArrayDeque<>();
+	private final Map<Long, Integer> inbound = new HashMap<>();
+	private long nextTicket = 1;
+
+	/** Whether the Core reaches a slot by Courier (another district) or by a terminal next door (its own). */
+	public boolean needsCourier(SlotKey k) {
+		return !"core".equals(district(k));
+	}
+
+	/** Last value sent to each port by Courier, so a loop that repeats an OUT does not flood the streets. */
+	private final Map<String, Integer> outbox = new HashMap<>();
+
+	/**
+	 * Posts a letter and makes sure a Courier is around to carry it. Returns the ticket, or -1 when
+	 * the port already holds that value and nothing needs to travel.
+	 */
+	public long post(ServerLevel level, SlotKey slot, String port, int value, boolean read) {
+		if (!read) {
+			String key = slot + "." + port;
+			Integer last = outbox.get(key);
+			if (last != null && last == value) {
+				return -1;
+			}
+			outbox.put(key, value);
+		}
+		long ticket = nextTicket++;
+		mail.add(new Mail(ticket, slot, port, value, read));
+		List<CourierEntity> couriers = couriers(level);
+		boolean idle = couriers.stream().anyMatch(CourierEntity::idle);
+		if (!idle && couriers.size() < cfg().maxCouriers) {
+			CourierEntity c = SeedCityEntities.COURIER.spawn(level, seedPos.above(5), EntitySpawnReason.MOB_SUMMONED);
+			if (c != null) {
+				c.setCity(seedPos);
+			}
+		}
+		return ticket;
+	}
+
+	public Optional<Mail> takeMail() {
+		return Optional.ofNullable(mail.poll());
+	}
+
+	public int pendingMail() {
+		return mail.size();
+	}
+
+	public void deliverInbound(long ticket, int value) {
+		inbound.put(ticket, value);
+	}
+
+	/** The value a read letter came back with, once; empty while the Courier is still out. */
+	public Optional<Integer> inboundResult(long ticket) {
+		Integer v = inbound.remove(ticket);
+		return Optional.ofNullable(v);
+	}
+
+	public List<CourierEntity> couriers(ServerLevel level) {
+		return level.getEntities(SeedCityEntities.COURIER, bounds(), c -> seedPos.equals(c.cityPos()));
+	}
+
+	// ---- player blueprints -------------------------------------------------------------------
+
+	private String lastBlueprintResult = "";
+
+	/** Any footprint: floor solid, everything above clear. Used for player blueprints. */
+	public boolean buildableAt(ServerLevel level, Placement p) {
+		var box = p.footprint();
+		for (int x = box.minX(); x <= box.maxX(); x++) {
+			for (int z = box.minZ(); z <= box.maxZ(); z++) {
+				BlockPos floor = new BlockPos(x, box.minY(), z);
+				BlockState f = level.getBlockState(floor);
+				if (f.isAir() || !f.isCollisionShapeFullBlock(level, floor)) {
+					return false;
+				}
+				for (int y = box.minY() + 1; y <= box.maxY(); y++) {
+					BlockState st = level.getBlockState(new BlockPos(x, y, z));
+					if (!(st.isAir() || st.canBeReplaced())) {
+						return false;
+					}
+				}
+			}
+		}
+		return true;
+	}
+
+	public void noteBlueprintResult(String s) {
+		lastBlueprintResult = s;
+	}
+
+	public String lastBlueprintResult() {
+		return lastBlueprintResult;
+	}
+
+	// ---- the program -------------------------------------------------------------------------
+
+	/** Outcome of inserting a card. On rejection the previous card stays in the reader. */
+	public record CardResult(boolean accepted, String message, ItemStack ejected) {
+	}
+
+	/**
+	 * Parses and resolves a card. A parse or binding error is reported with its line and leaves
+	 * the previous program running. A card whose hardware is missing is accepted as a plan: its
+	 * needs become goals for the builders and it goes live when they are built (doc 15.2).
+	 */
+	public CardResult insertCard(ServerLevel level, String text, ItemStack item) {
+		this.level = level;
+		net.tabor.seedcity.card.Program program;
+		Executor next;
+		try {
+			program = net.tabor.seedcity.card.CardParser.parse(text);
+			next = Executor.resolve(program, this);
+		} catch (net.tabor.seedcity.card.CardError e) {
+			cardError = "CARD ERROR " + e;
+			SeedCity.LOGGER.info("City {}: card rejected: {}", seedPos.toShortString(), e);
+			return new CardResult(false, "Card rejected, " + e + ". " + (executor == null ? "The city runs its default." : "The previous card keeps running."), ItemStack.EMPTY);
+		}
+		ItemStack previous = cardItem;
+		if (executor != null) {
+			clearTerminals(level);
+		}
+		cardError = null;
+		cardText = text;
+		cardItem = item == null ? ItemStack.EMPTY : item;
+		executor = next;
+		programRestorePending = false;
+		String msg = next.live()
+				? "Card accepted and running (" + program.code().size() + " ops)."
+				: "Card accepted as a plan; the city needs " + String.join(", ", next.needs()) + " before it can run.";
+		SeedCity.LOGGER.info("City {}: {}", seedPos.toShortString(), msg);
+		return new CardResult(true, msg, previous);
+	}
+
+	/** Removes the card: terminals come out, the streets go back to what they were, L0 runs. */
+	public ItemStack ejectCard(ServerLevel level) {
+		this.level = level;
+		if (cardText == null) {
+			return ItemStack.EMPTY;
+		}
+		clearTerminals(level);
+		ItemStack out = cardItem;
+		cardText = null;
+		cardItem = ItemStack.EMPTY;
+		executor = null;
+		cardError = null;
+		programRestorePending = false;
+		SeedCity.LOGGER.info("City {}: card ejected", seedPos.toShortString());
+		return out;
+	}
+
+	public Optional<Executor> executor() {
+		return Optional.ofNullable(executor);
+	}
+
+	public boolean programLive() {
+		return executor != null && executor.live();
+	}
+
+	/** Cells the current plan still needs, for the grammar. */
+	public Map<Identifier, Integer> wantedCells() {
+		return executor == null || executor.live() ? Map.of() : executor.wanted();
+	}
+
+	/** Called every game tick by the manager while the seed chunk ticks. */
+	public void tickProgram(ServerLevel level) {
+		this.level = level;
+		if (frozen) {
+			return;
+		}
+		if (programRestorePending) {
+			programRestorePending = false;
+			if (cardText != null) {
+				ItemStack keep = cardItem;
+				insertCard(level, cardText, keep);
+			}
+		}
+		if (executor == null) {
+			return;
+		}
+		if (!executor.live()) {
+			// hardware may have arrived since the card was inserted: try to bind again
+			if (level.getGameTime() % 40 == 0) {
+				try {
+					Executor again = Executor.resolve(executor.program(), this);
+					if (again.live()) {
+						executor = again;
+						SeedCity.LOGGER.info("City {}: plan became live", seedPos.toShortString());
+					}
+				} catch (net.tabor.seedcity.card.CardError e) {
+					cardError = "CARD ERROR " + e;
+				}
+			}
+			return;
+		}
+		executor.tick(level);
+	}
+
+	public String programSummary() {
+		if (executor == null) {
+			return cardError != null ? cardError + "; running the hardware default" : "L0: hardware default";
+		}
+		return executor.status();
+	}
+
+	/** What the Reader wall shows. */
+	public List<String> readerLines() {
+		List<String> lines = new ArrayList<>();
+		lines.add("SEED CITY CORE");
+		if (cardError != null) {
+			lines.add(cardError);
+		}
+		if (executor == null) {
+			lines.add("no card: hardware default");
+		} else {
+			lines.add(executor.status());
+			StringBuilder regs = new StringBuilder();
+			for (Map.Entry<Integer, SlotKey> e : executor.registers().entrySet()) {
+				regs.append("R").append(e.getKey()).append('=').append(Math.max(0, readPort(e.getValue(), "out"))).append("  ");
+			}
+			if (!regs.isEmpty()) {
+				lines.add(regs.toString().trim());
+			}
+		}
+		lines.add("clock " + (clockSignal(level) > 0 ? "HIGH" : "low") + "  built " + builtCount);
+		return lines;
+	}
+
+	private ServerLevel level;
 
 	// ---- planning ---------------------------------------------------------------------------
 
@@ -600,7 +980,7 @@ public final class CityState {
 			}
 			Optional<Goal> goal = haveActuator ? Optional.empty() : Optional.of(Goal.WANT_ACTUATOR);
 			FrontierSlot fs = new FrontierSlot(k.x(), k.z(), district(k), Set.copyOf(s.rejected));
-			Optional<Choice> choice = Grammar.choose(fs, constraints(k, live), goal, rng, CellLibrary.all());
+			Optional<Choice> choice = Grammar.choose(fs, constraints(k, live), goal, wantedCells(), rng, CellLibrary.all());
 			if (choice.isEmpty()) {
 				s.status = SlotStatus.BLOCKED;
 				s.note = "no legal cell";
@@ -842,6 +1222,7 @@ public final class CityState {
 			s.status = SlotStatus.BUILT;
 			s.builder = null;
 			builtCount++;
+			assignOrdinal(s);
 		}
 	}
 
@@ -938,6 +1319,7 @@ public final class CityState {
 				builtCount++;
 			}
 			s.status = SlotStatus.BUILT;
+			assignOrdinal(s);
 		}
 		return s;
 	}
@@ -949,6 +1331,7 @@ public final class CityState {
 		if (!level.isPositionEntityTicking(seedPos)) {
 			return;   // unloaded districts do not tick (doc 26), and spawning into unloaded chunks leaks mobs
 		}
+		this.level = level;
 		if (!level.getBlockState(seedPos).is(SeedCityBlocks.SEED)) {
 			if (!frozen) {
 				SeedCity.LOGGER.info("City {}: seed destroyed, freezing", seedPos.toShortString());
@@ -972,6 +1355,9 @@ public final class CityState {
 		}
 		processVerification(level);
 		watchFaults(level);
+		if (slots.get(new SlotKey(0, 0)) != null && slots.get(new SlotKey(0, 0)).status == SlotStatus.BUILT) {
+			ReaderWall.update(level, seedPos, readerLines());
+		}
 		int desired = Math.min(cfg.maxBuilders, 1 + builtCount / cfg.cellsPerBuilder);
 		if (builders.size() < desired) {
 			spawnBuilder(level);
@@ -1097,7 +1483,8 @@ public final class CityState {
 		return "city@" + seedPos.toShortString() + (frozen ? " FROZEN" : "") + " seed=" + Long.toHexString(citySeed)
 				+ " built=" + built + " faults=" + fault + " verifying=" + verify + " building=" + building + " planned=" + planned
 				+ " pending=" + pending + " blocked=" + blocked
-				+ " stock=" + redstone + "r/" + stone + "s/" + wood + "w";
+				+ " stock=" + redstone + "r/" + stone + "s/" + wood + "w"
+				+ " program=[" + programSummary() + "]";
 	}
 
 	public List<String> describeSlots() {
@@ -1105,7 +1492,7 @@ public final class CityState {
 		list.sort(Comparator.comparingInt((Slot s) -> s.key.chebyshev()).thenComparingInt(s -> s.key.x()).thenComparingInt(s -> s.key.z()));
 		List<String> out = new ArrayList<>();
 		for (Slot s : list) {
-			out.add(s + (s.note.isEmpty() ? "" : " [" + s.note + "]"));
+			out.add(s + " {" + district(s.key) + "}" + (s.note.isEmpty() ? "" : " [" + s.note + "]"));
 		}
 		return out;
 	}

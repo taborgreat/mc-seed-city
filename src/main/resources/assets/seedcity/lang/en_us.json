@@ -1,7 +1,11 @@
 {
 	"block.seedcity.seed": "City Seed",
 	"block.seedcity.probe": "Verifier Probe",
+	"block.seedcity.terminal": "Core Terminal",
+	"block.seedcity.card_reader": "Card Reader",
+	"item.seedcity.blueprint": "Blueprint",
 	"entity.seedcity.builder": "Builder",
 	"entity.seedcity.warden": "Warden",
-	"entity.seedcity.sentinel": "Sentinel"
+	"entity.seedcity.sentinel": "Sentinel",
+	"entity.seedcity.courier": "Courier"
 }

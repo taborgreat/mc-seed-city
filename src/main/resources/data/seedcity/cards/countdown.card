@@ -1,0 +1,9 @@
+; Count R0 down from 15 to 0 through the subtractor, raising the bridge while it is non-zero.
+; Needs one register vault and one alu_sub cell. Arithmetic saturates at 0.
+start:
+SET R0 15
+loop:
+OUT drawbridge.1.in R0
+SUB R0 1
+JZ R0 start
+JMP loop

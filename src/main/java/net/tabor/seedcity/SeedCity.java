@@ -31,11 +31,13 @@ public final class SeedCity implements ModInitializer {
 	public void onInitialize() {
 		SeedCityConfig.load();
 		SeedCityBlocks.init();
+		SeedCityItems.init();
 		SeedCityEntities.init();
 		CellLibrary.init();
+		net.tabor.seedcity.card.CardLibrary.init();
 		Verifier.init();
 		CityManager.init();
 		SeedCityCommands.init();
-		LOGGER.info("Seed City loaded (phase 1: city boat)");
+		LOGGER.info("Seed City loaded");
 	}
 }

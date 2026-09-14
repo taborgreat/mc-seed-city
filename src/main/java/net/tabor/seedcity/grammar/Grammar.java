@@ -60,6 +60,15 @@ public final class Grammar {
 	}
 
 	public static Optional<Choice> choose(FrontierSlot slot, List<Constraint> neighbours, Optional<Goal> goal, Random rng, Collection<Cell> library) {
+		return choose(slot, neighbours, goal, Map.of(), rng, library);
+	}
+
+	/**
+	 * @param wanted cells the current program still needs (docs/city-as-computer.md, demand);
+	 *               each is weighted up strongly wherever it is legal, even in quiet slots
+	 */
+	public static Optional<Choice> choose(FrontierSlot slot, List<Constraint> neighbours, Optional<Goal> goal,
+										  Map<net.minecraft.resources.Identifier, Integer> wanted, Random rng, Collection<Cell> library) {
 		Map<Direction, Constraint> bySide = new EnumMap<>(Direction.class);
 		for (Constraint c : neighbours) {
 			bySide.put(c.side(), c);
@@ -71,8 +80,9 @@ public final class Grammar {
 		List<Candidate> quiet = new ArrayList<>();
 		for (Cell cell : cells) {
 			int base = cell.definition().weight(slot.district());
+			int want = wanted.getOrDefault(cell.id(), 0);
 			if (base <= 0) {
-				continue;
+				continue;   // zoning holds even for wanted cells: ALU cells grow in the Forge, vaults in Storage
 			}
 			for (Rotation rotation : Rotation.values()) {
 				if (slot.rejected().contains(FrontierSlot.rejectKey(cell.id().toString(), rotation.ordinal()))) {
@@ -83,6 +93,9 @@ public final class Grammar {
 					continue;
 				}
 				double w = base;
+				if (want > 0) {
+					w *= 6 * want;
+				}
 				if (fit.liveInputs() > 0) {
 					w *= 1 + 0.75 * fit.openOuts();
 					if (fit.straight()) {
@@ -99,7 +112,8 @@ public final class Grammar {
 					if (fit.feeds() > 0) {
 						w *= 1.5;
 					}
-					quiet.add(new Candidate(new Choice(cell, rotation), w));
+					// a wanted cell competes with the live pool even when nothing feeds it yet
+					(want > 0 ? live : quiet).add(new Candidate(new Choice(cell, rotation), w));
 				}
 			}
 		}

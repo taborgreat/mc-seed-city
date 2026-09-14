@@ -45,6 +45,11 @@ In a dev world (creative, flat world is easiest):
 /seedcity city               # status: slots built, stock, what each builder is doing
 /seedcity slots              # every slot of the nearest city and why it is blocked, if it is
 /seedcity graph              # the city as a graph: connections, dead ends, what carries the clock
+/seedcity card <name>        # a written book with a built-in card (hold_bridges, blink, countdown, daylight)
+/seedcity insert <name>      # insert a built-in card straight into the nearest city
+/seedcity eject              # eject the card
+/seedcity reader             # what the Reader wall shows
+/seedcity blueprint <cell>   # a blueprint item: right-click a Builder with it where you want the cell
 /seedcity list               # the cell library
 /seedcity place <cell> [rotation 0-3]
 /seedcity verify <cell> [rotation 0-3] [keep]
@@ -114,5 +119,13 @@ powered Seed on a platform spawns Builders that enclose it in a Core and fill th
 verified cells, layout determined by the seed alone, clock pulsing into a drawbridge. Phase 2 is
 complete (2026-09-13): Wardens patrol each district and rebuild anything that differs from the
 blueprint, every city plants a Fault Cell whose district stays dark until a player fixes the
-break, and Sentinels guard register vaults, asleep at 0 and hostile at 15.
-Current phase: **3**, designed to [docs/city-as-computer.md](docs/city-as-computer.md).
+break, and Sentinels guard register vaults, asleep at 0 and hostile at 15. Phase 3 is complete
+(2026-09-14): write a card in a book, insert it at the Core's Card Reader, and the city runs it
+through its own register vaults and ALU cells one instruction per clock beat; bad cards show
+their line on the Reader wall, ejecting returns to the default, and a card that needs hardware
+waits as a plan while the builders grow it. See [docs/cards.md](docs/cards.md).
+Phase 4 is complete (2026-09-14): cities are zoned per seed into Forge, RAM, Storage and
+residential districts you can read from the air; a card that needs hardware makes the builders
+grow it in the right district and goes live only after verification; Couriers carry `OUT` and
+`IN` between districts; a blueprint handed to a Builder builds a cell where you stand; and vaults
+open only on a computed 15. Current phase: **5**.

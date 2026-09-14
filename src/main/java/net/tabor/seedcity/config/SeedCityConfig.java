@@ -45,6 +45,10 @@ public final class SeedCityConfig {
 	public int wardenSweepTicks = 100;
 	/** Spawn a Sentinel on every built register block. */
 	public boolean sentinelsOnRegisters = true;
+	/** Couriers a city may have in flight at once. */
+	public int maxCouriers = 4;
+	/** Angular sectors the city is zoned into (Forge, RAM, Storage, residential, plaza), seed-shuffled. */
+	public int sectors = 5;
 
 	private static SeedCityConfig current = new SeedCityConfig();
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

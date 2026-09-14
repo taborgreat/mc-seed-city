@@ -31,7 +31,110 @@ public final class Cells {
 
 	public static List<CellBuilder> all() {
 		return List.of(busSegment(), inverter(), registerBlock(), clockTower(), drawbridge(), storageCell(),
-				core(), decorPlaza(), daylightPlaza(), wireSegment(), junction());
+				core(), decorPlaza(), daylightPlaza(), wireSegment(), junction(),
+				aluSub(), aluNot(), aluOr(), vault());
+	}
+
+	/**
+	 * The vault (design doc 7: loot behind logic). A brick strongroom with a loot chest whose iron
+	 * door opens only when the input reads exactly 15: a subtract-mode comparator takes 14 off the
+	 * input (a torch two dust away is a constant 14) and what is left, 1 or 0, powers the door.
+	 * A program has to compute the key; 14 is not enough.
+	 */
+	static CellBuilder vault() {
+		CellBuilder b = shell("vault", 5);
+		// the strongroom: walls, roof, chest, a lantern
+		b.walls(1, 1, 2, 5, 3, 6, "minecraft:polished_deepslate");
+		b.fill(1, 4, 2, 5, 4, 6, "minecraft:polished_deepslate");
+		b.set(3, 1, 4, BlockSpec.of("minecraft:chest", "facing", "north"));
+		b.set(3, 3, 4, BlockSpec.of("minecraft:lantern", "hanging", "true"));
+		// the door in the north wall
+		b.set(3, 1, 2, BlockSpec.of("minecraft:iron_door", "facing", "north", "half", "lower", "hinge", "left", "open", "false", "powered", "false"));
+		b.set(3, 2, 2, BlockSpec.of("minecraft:iron_door", "facing", "north", "half", "upper", "hinge", "left", "open", "false", "powered", "false"));
+		// the lock: in - 14, into the door
+		b.comparator(3, 1, 0, SOUTH, false);
+		b.comparator(3, 1, 1, SOUTH, true);
+		b.torch(0, 1, 1);
+		b.dust(1, 1, 1).dust(2, 1, 1);
+		return b.kind("actuator").truth("actuator").loot("minecraft:chests/simple_dungeon")
+				.port("in", "in", NORTH, 3, 1, 0, 4)
+				.weight("core", 0).weight("residential", 1).weight("forge", 0).weight("plaza", 2).weight("ram", 1).weight("storage", 3)
+				.cost(12, 120, 10);
+	}
+
+	static final String DARK = "minecraft:polished_blackstone_bricks";
+	static final String DARK_GLASS = "minecraft:gray_stained_glass";
+
+	/** Compute-district shell: dark bricks, low profile. The Forge look. */
+	private static CellBuilder forgeShell(String id) {
+		CellBuilder b = new CellBuilder(id, 7, 4, 7);
+		b.fill(0, 0, 0, 6, 0, 6, "minecraft:polished_blackstone");
+		b.fill(0, 1, 0, 0, 2, 0, DARK).fill(6, 1, 0, 6, 2, 0, DARK).fill(0, 1, 6, 0, 2, 6, DARK).fill(6, 1, 6, 6, 2, 6, DARK);
+		return b;
+	}
+
+	/**
+	 * Analog subtract: out = max(a - b, 0). a enters from the north through three comparators into
+	 * a comparator in subtract mode; b enters from the west through three comparators into its
+	 * side. One native comparator operation, dressed as a cell.
+	 */
+	static CellBuilder aluSub() {
+		CellBuilder b = forgeShell("alu_sub");
+		b.comparator(3, 1, 0, SOUTH, false).comparator(3, 1, 1, SOUTH, false).comparator(3, 1, 2, SOUTH, false);
+		b.comparator(3, 1, 3, SOUTH, true);                               // rear a, side b
+		b.comparator(3, 1, 4, SOUTH, false).comparator(3, 1, 5, SOUTH, false).comparator(3, 1, 6, SOUTH, false);
+		b.comparator(0, 1, 3, EAST, false).comparator(1, 1, 3, EAST, false).comparator(2, 1, 3, EAST, false);
+		b.set(3, 2, 3, DARK_GLASS);
+		return b.kind("logic").truth("sub")
+				.port("a", "in", NORTH, 3, 1, 0, 4)
+				.port("b", "in", WEST, 0, 1, 3, 4)
+				.port("out", "out", SOUTH, 3, 1, 6, 4)
+				.weight("core", 0).weight("residential", 0).weight("forge", 8).weight("plaza", 0).weight("ram", 0).weight("storage", 0)
+				.cost(30, 60, 0).setpiece(false);
+	}
+
+	/**
+	 * Analog complement: out = 15 - a. A comparator in subtract mode with a constant 15 on its
+	 * rear (a torch through a repeater) and a on its side. a comes in from the north into block
+	 * B1; a comparator reading B1 points south into the side of the subtractor, which faces west
+	 * and outputs east into block B2; a comparator reads B2 south into block B3; dust beside B3
+	 * feeds the output comparator on the south face.
+	 */
+	static CellBuilder aluNot() {
+		CellBuilder b = forgeShell("alu_not");
+		b.comparator(3, 1, 0, SOUTH, false);          // a in
+		b.set(3, 1, 1, DARK);                         // B1 = a
+		b.comparator(3, 1, 2, SOUTH, false);          // reads B1, points into the subtractor's side
+		b.torch(1, 1, 3);                             // constant
+		b.repeater(2, 1, 3, EAST, 1);                 // 15 into the subtractor's rear
+		b.comparator(3, 1, 3, EAST, true);            // rear 15, side a: 15 - a, outputs east
+		b.set(4, 1, 3, DARK);                         // B2 = 15 - a
+		b.comparator(4, 1, 4, SOUTH, false);          // reads B2
+		b.set(4, 1, 5, DARK);                         // B3 = 15 - a
+		b.dust(3, 1, 5);                              // tap beside B3
+		b.comparator(3, 1, 6, SOUTH, false);          // out
+		b.set(3, 2, 3, DARK_GLASS);
+		return b.kind("logic").truth("complement")
+				.port("a", "in", NORTH, 3, 1, 0, 4)
+				.port("out", "out", SOUTH, 3, 1, 6, 4)
+				.weight("core", 0).weight("residential", 0).weight("forge", 8).weight("plaza", 0).weight("ram", 0).weight("storage", 0)
+				.cost(24, 60, 0).setpiece(false);
+	}
+
+	/** Analog OR: out = max(a, b). Both inputs drive one block; a block takes the stronger. */
+	static CellBuilder aluOr() {
+		CellBuilder b = forgeShell("alu_or");
+		b.comparator(3, 1, 0, SOUTH, false).comparator(3, 1, 1, SOUTH, false).comparator(3, 1, 2, SOUTH, false);
+		b.comparator(0, 1, 3, EAST, false).comparator(1, 1, 3, EAST, false).comparator(2, 1, 3, EAST, false);
+		b.set(3, 1, 3, DARK);                                            // M = max(a, b)
+		b.comparator(3, 1, 4, SOUTH, false).comparator(3, 1, 5, SOUTH, false).comparator(3, 1, 6, SOUTH, false);
+		b.set(3, 2, 3, DARK_GLASS);
+		return b.kind("logic").truth("max")
+				.port("a", "in", NORTH, 3, 1, 0, 4)
+				.port("b", "in", WEST, 0, 1, 3, 4)
+				.port("out", "out", SOUTH, 3, 1, 6, 4)
+				.weight("core", 0).weight("residential", 0).weight("forge", 8).weight("plaza", 0).weight("ram", 0).weight("storage", 0)
+				.cost(28, 60, 0).setpiece(false);
 	}
 
 	/**
@@ -50,6 +153,8 @@ public final class Cells {
 		b.set(3, 3, 3, BlockSpec.of("minecraft:lantern", "hanging", "true"));
 		b.set(2, 0, 3, "minecraft:chiseled_stone_bricks").set(4, 0, 3, "minecraft:chiseled_stone_bricks")
 				.set(3, 0, 2, "minecraft:chiseled_stone_bricks").set(3, 0, 4, "minecraft:chiseled_stone_bricks");
+		// the Card Reader: a slot on the south side of the chamber, facing the Seed
+		b.set(3, 1, 5, "seedcity:card_reader");
 		return b.kind("core").truth("none")
 				.weight("core", 0).weight("residential", 0).weight("forge", 0).weight("plaza", 0)
 				.cost(0, 40, 0);
@@ -65,7 +170,7 @@ public final class Cells {
 		b.set(3, 0, 3, "minecraft:chiseled_stone_bricks");
 		b.fill(2, 0, 2, 4, 0, 2, BRICK).fill(2, 0, 4, 4, 0, 4, BRICK).set(2, 0, 3, BRICK).set(4, 0, 3, BRICK);
 		return b.kind("decor").truth("none")
-				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 2)
+				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 2).weight("ram", 1).weight("storage", 1)
 				.cost(0, 30, 8);
 	}
 
@@ -79,7 +184,7 @@ public final class Cells {
 		b.set(3, 1, 1, "minecraft:air").set(1, 1, 3, "minecraft:air").set(5, 1, 3, "minecraft:air");
 		return b.kind("sensor").truth("sensor")
 				.port("out", "out", SOUTH, 3, 1, 6, 4)
-				.weight("core", 0).weight("residential", 1).weight("forge", 0).weight("plaza", 2)
+				.weight("core", 0).weight("residential", 1).weight("forge", 0).weight("plaza", 2).weight("ram", 0).weight("storage", 0)
 				.cost(4, 40, 0);
 	}
 
@@ -97,7 +202,7 @@ public final class Cells {
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
 				.fault(3, 1, 3)
-				.weight("core", 3).weight("residential", 4).weight("forge", 4).weight("plaza", 3)
+				.weight("core", 3).weight("residential", 4).weight("forge", 4).weight("plaza", 3).weight("ram", 3).weight("storage", 3)
 				.cost(6, 50, 0);
 	}
 
@@ -119,7 +224,7 @@ public final class Cells {
 				.port("out_w", "out", WEST, 0, 1, 3, 1)
 				.port("out_e", "out", EAST, 6, 1, 3, 1)
 				.fault(3, 1, 3)
-				.weight("core", 3).weight("residential", 2).weight("forge", 3).weight("plaza", 3)
+				.weight("core", 3).weight("residential", 2).weight("forge", 3).weight("plaza", 3).weight("ram", 2).weight("storage", 2)
 				.cost(10, 50, 0);
 	}
 
@@ -141,7 +246,7 @@ public final class Cells {
 				.port("in", "in", NORTH, 3, 1, 0, 4)
 				.port("out", "out", SOUTH, 3, 1, 6, 4)
 				.fault(3, 1, 3)
-				.weight("core", 2).weight("residential", 2).weight("forge", 8).weight("plaza", 2)
+				.weight("core", 2).weight("residential", 1).weight("forge", 6).weight("plaza", 1).weight("ram", 5).weight("storage", 1)
 				.cost(14, 60, 0);
 	}
 
@@ -159,7 +264,7 @@ public final class Cells {
 		return b.kind("logic").truth("not")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
-				.weight("core", 1).weight("residential", 2).weight("forge", 6).weight("plaza", 1)
+				.weight("core", 1).weight("residential", 2).weight("forge", 6).weight("plaza", 1).weight("ram", 1).weight("storage", 0)
 				.cost(6, 50, 0);
 	}
 
@@ -214,7 +319,7 @@ public final class Cells {
 				.port("in", "in", NORTH, 3, 1, 0, 4)
 				.port("clk", "in", WEST, 0, 1, 3, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 4)
-				.weight("core", 3).weight("residential", 4).weight("forge", 6).weight("plaza", 1)
+				.weight("core", 1).weight("residential", 0).weight("forge", 0).weight("plaza", 0).weight("ram", 8).weight("storage", 0)
 				.cost(24, 80, 0);
 	}
 
@@ -264,7 +369,7 @@ public final class Cells {
 		b.fill(1, 1, 4, 1, 2, 4, BRICK).fill(5, 1, 4, 5, 2, 4, BRICK);
 		return b.kind("actuator").truth("actuator")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
-				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 4)
+				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 4).weight("ram", 0).weight("storage", 1)
 				.cost(8, 60, 12);
 	}
 
@@ -281,7 +386,7 @@ public final class Cells {
 		b.facing(1, 1, 4, "minecraft:barrel", UP).facing(5, 1, 4, "minecraft:barrel", UP);
 		b.set(3, 3, 3, BlockSpec.of("minecraft:lantern", "hanging", "true"));
 		return b.kind("storage").truth("none")
-				.weight("core", 2).weight("residential", 3).weight("forge", 2).weight("plaza", 2)
+				.weight("core", 2).weight("residential", 1).weight("forge", 1).weight("plaza", 1).weight("ram", 0).weight("storage", 8)
 				.cost(0, 90, 40);
 	}
 }

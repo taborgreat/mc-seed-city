@@ -40,10 +40,12 @@ Rules:
 - The grammar never wastes a live output: if a cell that listens to it fits, one is chosen;
   plazas and warehouses only fill slots nothing points at.
 - `truth` names a verifier model: `passthrough, not, and, or, register, counter, decoder,
-  actuator, sensor, clock, none`.
+  actuator, sensor, clock, none`, and the analog ALU models `sub, complement, max, min`
+  (ports `a`, `b`, `out`).
 - `settle` (optional, default 40) is how many game ticks the verifier waits after driving inputs.
 - `fault` (optional) names the one cell-local block the planner may leave out to plant this cell
   as a Fault Cell. Wires, junctions and bus segments declare their middle block.
+- `loot` (optional) is a loot table every chest in the cell is filled from when a Builder places it.
 - `setpiece` is `false` only for forge and decor cells.
 
 ## Footprint and port conventions
@@ -94,6 +96,22 @@ them. Results are cached by (cell, neighbours, rotation).
 | drawbridge | actuator | actuator | in N 1b | dust climbs onto blocks that power three sticky pistons under a plank deck |
 | storage_cell | storage | none | none | brick warehouse with barrels; builders fetch material here |
 | decor_plaza | decor | none | none | paved square with lantern posts; the grammar's always-legal fallback |
+| alu_sub | logic | sub | a N 4b, b W 4b, out S 4b | one subtract-mode comparator: out = max(a − b, 0) |
+| alu_not | logic | complement | a N 4b, out S 4b | subtract from a constant 15: out = 15 − a |
+| alu_or | logic | max | a N 4b, b W 4b, out S 4b | both inputs drive one block, which takes the stronger |
+| vault | actuator | actuator | in N 4b | strongroom with a loot chest; the iron door opens only when in reads exactly 15 |
+
+## Districts
+
+Beyond the ring around the Seed, a city is cut into angular sectors named `forge`, `ram`,
+`storage`, `residential` and `plaza`, shuffled and rotated by the city seed. A cell's `weights`
+say how much it wants each district; zero keeps it out. Registers grow in RAM, ALU cells in the
+Forge, warehouses in Storage, bridges and plazas in the quiet sectors. `/seedcity slots` prints
+each slot's district.
+
+The three ALU cells are the whole arithmetic of the analog computer (docs/city-as-computer.md):
+the Core composes ADD as NOT, SUB, NOT and AND as SUB, SUB. They wear the Compute district's dark
+look and are exempt from the set-piece rule.
 
 Core and clock tower carry zero district weights so the grammar never picks them; the planner
 places them by force at slots (0,0) and (0,1), and forces a junction at (0,2) on the clock's

@@ -1,0 +1,5 @@
+; Hold every drawbridge up. The simplest L1 card: one register, one output.
+SET R0 15
+loop:
+OUT drawbridge.*.in R0
+JMP loop

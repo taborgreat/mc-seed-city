@@ -6,7 +6,7 @@
     { "name": "in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 1 }
   ],
   "truth": "actuator",
-  "weights": { "core": 1, "residential": 2, "forge": 0, "plaza": 4 },
+  "weights": { "core": 1, "residential": 2, "forge": 0, "plaza": 4, "ram": 0, "storage": 1 },
   "cost": { "redstone": 8, "stone": 60, "wood": 12 },
   "setpiece": true
 }

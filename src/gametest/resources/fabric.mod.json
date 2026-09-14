@@ -8,7 +8,9 @@
 		"fabric-gametest": [
 			"net.tabor.seedcity.gametest.CellVerifyTests",
 			"net.tabor.seedcity.gametest.CityGrowthTests",
-			"net.tabor.seedcity.gametest.GuardianTests"
+			"net.tabor.seedcity.gametest.GuardianTests",
+			"net.tabor.seedcity.gametest.CardTests",
+			"net.tabor.seedcity.gametest.ComputerTests"
 		]
 	},
 	"depends": {

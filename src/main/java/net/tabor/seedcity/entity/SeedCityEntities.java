@@ -14,6 +14,7 @@ public final class SeedCityEntities {
 	public static EntityType<BuilderEntity> BUILDER;
 	public static EntityType<WardenEntity> WARDEN;
 	public static EntityType<SentinelEntity> SENTINEL;
+	public static EntityType<CourierEntity> COURIER;
 
 	private SeedCityEntities() {
 	}
@@ -33,5 +34,10 @@ public final class SeedCityEntities {
 		SENTINEL = Registry.register(BuiltInRegistries.ENTITY_TYPE, sentinelKey,
 				EntityType.Builder.of(SentinelEntity::new, MobCategory.MONSTER).sized(0.6F, 1.95F).clientTrackingRange(8).build(sentinelKey));
 		FabricDefaultAttributeRegistry.register(SENTINEL, SentinelEntity.createAttributes());
+
+		ResourceKey<EntityType<?>> courierKey = ResourceKey.create(Registries.ENTITY_TYPE, SeedCity.id("courier"));
+		COURIER = Registry.register(BuiltInRegistries.ENTITY_TYPE, courierKey,
+				EntityType.Builder.of(CourierEntity::new, MobCategory.MISC).sized(0.4F, 0.6F).clientTrackingRange(10).build(courierKey));
+		FabricDefaultAttributeRegistry.register(COURIER, CourierEntity.createAttributes());
 	}
 }

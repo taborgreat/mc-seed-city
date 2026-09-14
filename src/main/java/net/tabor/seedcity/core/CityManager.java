@@ -43,21 +43,27 @@ public final class CityManager extends SavedData {
 
 	public static void init() {
 		ServerTickEvents.END_LEVEL_TICK.register(level -> {
-			if (level.getGameTime() % 20 != 0) {
-				return;
-			}
 			CityManager m = get(level);
 			if (m.cities.isEmpty()) {
 				return;
 			}
+			boolean second = level.getGameTime() % 20 == 0;
 			for (CityState c : new ArrayList<>(m.cities.values())) {
 				try {
-					c.upkeep(level);
+					if (!level.isPositionEntityTicking(c.seedPos())) {
+						continue;
+					}
+					c.tickProgram(level);
+					if (second) {
+						c.upkeep(level);
+					}
 				} catch (Exception e) {
-					SeedCity.LOGGER.error("City {} upkeep failed", c.seedPos().toShortString(), e);
+					SeedCity.LOGGER.error("City {} tick failed", c.seedPos().toShortString(), e);
 				}
 			}
-			m.setDirty();
+			if (second) {
+				m.setDirty();
+			}
 		});
 	}
 

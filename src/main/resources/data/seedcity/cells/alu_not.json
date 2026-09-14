@@ -1,0 +1,13 @@
+{
+  "id": "seedcity:alu_not",
+  "kind": "logic",
+  "size": [7, 4, 7],
+  "ports": [
+    { "name": "a", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 4 },
+    { "name": "out", "dir": "out", "face": "south", "pos": [3, 1, 6], "bits": 4 }
+  ],
+  "truth": "complement",
+  "weights": { "core": 0, "residential": 0, "forge": 8, "plaza": 0, "ram": 0, "storage": 0 },
+  "cost": { "redstone": 24, "stone": 60, "wood": 0 },
+  "setpiece": false
+}

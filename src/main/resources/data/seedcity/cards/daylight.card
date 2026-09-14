@@ -1,0 +1,6 @@
+; Read the first daylight sensor into R0 and drive the first bridge with it: up by day, down by night.
+loop:
+IN R0 daylight_plaza.1.out
+OUT drawbridge.1.in R0
+WAIT 1
+JMP loop

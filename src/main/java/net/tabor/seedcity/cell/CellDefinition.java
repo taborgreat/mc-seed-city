@@ -24,6 +24,7 @@ import java.util.Set;
  *                    "settle" field, default 40
  * @param fault       optional "fault" field: the one block the planner may leave out to plant a
  *                    Fault Cell (doc 5.1, 7); null when the cell cannot be faulted
+ * @param loot        optional "loot" field: loot table id every chest in the cell is filled from
  */
 public record CellDefinition(
 		Identifier id,
@@ -35,7 +36,8 @@ public record CellDefinition(
 		Map<String, Integer> cost,
 		boolean setpiece,
 		int settleTicks,
-		BlockPos fault
+		BlockPos fault,
+		Identifier loot
 ) {
 	public boolean faultable() {
 		return fault != null;
@@ -105,7 +107,8 @@ public record CellDefinition(
 					throw new CellFormatException("fault " + fault + " outside size " + size);
 				}
 			}
-			return new CellDefinition(id, kind, size, ports, truth, weights, cost, setpiece, settle, fault);
+			Identifier loot = json.has("loot") ? Identifier.parse(GsonHelper.getAsString(json, "loot")) : null;
+			return new CellDefinition(id, kind, size, ports, truth, weights, cost, setpiece, settle, fault, loot);
 		} catch (JsonSyntaxException | IllegalStateException | IllegalArgumentException e) {
 			throw new CellFormatException(e.getMessage(), e);
 		}

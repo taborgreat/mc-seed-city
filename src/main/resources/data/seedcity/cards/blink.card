@@ -1,0 +1,7 @@
+; Raise and lower the first drawbridge every two beats of the Clock Tower.
+loop:
+OUT drawbridge.1.in 15
+WAIT 2
+OUT drawbridge.1.in 0
+WAIT 2
+JMP loop
