@@ -86,16 +86,16 @@ them. Results are cached by (cell, neighbours, rotation).
 | Cell | Kind | Truth | Ports | Circuit |
 | --- | --- | --- | --- | --- |
 | core | core | none | none | open chamber around the Seed (a structure void keeps the Seed); placed first by force |
-| clock_tower | logic | clock | out S 1b | torch-repeater loop, 68 game tick period; lamp beats under the spire; placed south of the core by force |
-| bus_segment | logic | passthrough | in N 4b, out S 4b | seven comparators in a row under glass |
-| wire_segment | logic | passthrough | in N 1b, out S 1b | repeater, dust, repeater: carries the clock |
-| junction | logic | passthrough | in N 1b; out S, E, W 1b | dust cross feeding three repeaters: fans the clock out |
+| clock_tower | logic | clock | out S 1b | torch-repeater loop, 68 game tick period, in a chamber under an 11-block spire; a torch ladder runs the beat up the spire as alternating bands of lamps; placed south of the core by force |
+| bus_segment | logic | passthrough | in N 4b, out S 4b | a paved street with seven comparators in a glass-covered groove down the middle, lantern posts on the corners |
+| wire_segment | logic | passthrough | in N 1b, out S 1b | a paved street: repeater, dust, repeater under glass; carries the clock |
+| junction | logic | passthrough | in N 1b; out S, E, W 1b | a crossroads: dust cross under glass feeding three repeaters; fans the clock out |
 | inverter | logic | not | in N 1b, out S 1b | repeater into a block, torch on the far side, dust out; lamp shows the inverted state |
-| register_block | logic | register | in N 4b, clk W 1b, out S 4b | four-comparator ring holds a strength; clk gates the ring, NOT clk gates the input |
+| register_block | logic | register | in N 4b, clk W 1b, out S 4b | a vault: four-comparator ring holds a strength; clk gates the ring, NOT clk gates the input; windows light when non-zero and a four-lamp gauge on the ground-floor wall shows the value (1, >4, >7, >10) |
 | daylight_plaza | sensor | sensor | out S 4b | daylight detector read by a comparator: a slow 4-bit source |
-| drawbridge | actuator | actuator | in N 1b | dust climbs onto blocks that power three sticky pistons under a plank deck |
-| storage_cell | storage | none | none | brick warehouse with barrels; builders fetch material here |
-| decor_plaza | decor | none | none | paved square with lantern posts; the grammar's always-legal fallback |
+| drawbridge | actuator | actuator | in N 1b | a plank deck with a slime spine spans a water channel between two banks; the input powers a pier that drives one sticky piston, lifting the whole deck |
+| storage_cell | storage | none | none | brick warehouse with barrels and a roof crane; Collectors unload and Builders fetch here |
+| decor_plaza | decor | none | none | paved square with a fountain and lantern posts; the grammar's always-legal fallback |
 | alu_sub | logic | sub | a N 4b, b W 4b, out S 4b | one subtract-mode comparator: out = max(a − b, 0) |
 | alu_not | logic | complement | a N 4b, out S 4b | subtract from a constant 15: out = 15 − a |
 | alu_or | logic | max | a N 4b, b W 4b, out S 4b | both inputs drive one block, which takes the stronger |

@@ -50,6 +50,9 @@ In a dev world (creative, flat world is easiest):
 /seedcity eject              # eject the card
 /seedcity reader             # what the Reader wall shows
 /seedcity blueprint <cell>   # a blueprint item: right-click a Builder with it where you want the cell
+/seedcity dream              # make the city write and run a card now (L3)
+/seedcity fit                # how the slot you stand in sits on the land
+/seedcity labels             # toggle floating labels over every cell: name, district, clocked, port values
 /seedcity list               # the cell library
 /seedcity place <cell> [rotation 0-3]
 /seedcity verify <cell> [rotation 0-3] [keep]
@@ -73,12 +76,14 @@ src/main/java/net/tabor/seedcity/
   build/     BuildTask interface: the one construction task type
   verify/    Verify interface: headless tick simulator and truth models
   card/      Card interface: punch-card parser and resolver (twelve ops)
-  entity/    Builder, Warden, Courier, Collector, Sentinel
+  entity/    Builder, Warden (shown as the Rectifier), Courier, Collector, Sentinel
+  extra/     the Redstone Rat: an extra outside the five, keeps creepers off the city
+  core/      CityState, CityManager, Terrain, PlayerBlocks, Executor, the Seed and Card Reader blocks
   core/      The Core and CityState (district priority list, frontier, program)
   config/    Server config and containment caps
   command/   /seedcity dev and admin commands
   mixin/     Empty; prefer Fabric API events
-src/client/java/net/tabor/seedcity/client/   renderers and screens only
+src/client/java/net/tabor/seedcity/client/   models and renderers only (art by Mcdrizzy; sources in art/, generators in tools/)
 src/cellgen/java/                            cell circuits and the NBT generator (no Minecraft dependency)
 src/gametest/java/                           gametests: every cell verified on a headless server
 src/main/resources/data/seedcity/
@@ -128,4 +133,10 @@ Phase 4 is complete (2026-09-14): cities are zoned per seed into Forge, RAM, Sto
 residential districts you can read from the air; a card that needs hardware makes the builders
 grow it in the right district and goes live only after verification; Couriers carry `OUT` and
 `IN` between districts; a blueprint handed to a Builder builds a cell where you stand; and vaults
-open only on a computed 15. Current phase: **5**.
+open only on a computed 15. Phase 5 is complete (2026-09-14): a Seed on open ground grows a city
+that fits the land (cells at the ground's own levels, dug in and founded, edges banked into the
+surrounding surface; ponds, cliffs, warding and player builds stay untouched); Collectors leave
+the city to mine wood, stone and redstone and haul it to the warehouses, so growth is a function
+of the land; the chunk cap halts growth exactly; and an idle city writes and runs its own cards,
+which you find as books in the reader. See [docs/terrain.md](docs/terrain.md) and
+[docs/fragments.md](docs/fragments.md). Next: bus streets with select lanes, and the Foundry.

@@ -63,10 +63,17 @@ A card that needs hardware the city has not built (`ADD` with no subtractor and 
 `R3` in a city with two vaults, `drawbridge.4.in` with three bridges) is accepted as a **plan**.
 The Reader wall lists what is missing, the builders favour those cells at the frontier, and the
 card goes live by itself once everything it needs is built and verified. Until then the previous
-card, or the hardware default, keeps running.
+card, or the hardware default, keeps running; the Reader wall shows both.
 
 ## Reading the wall
 
 The Reader wall floats above the Seed inside the Core. It shows the program state (default, plan
 with its needs, or live with the current line), the bound registers' values read straight from
 their vaults, whether the clock is high, and any card error with its line number.
+
+## Dreams
+
+A city with nothing in its reader writes a card of its own from the fragment library and runs
+it, or, if it has nothing to run it on yet, writes one that asks for hardware and grows toward it.
+It sits in the reader as a book titled `Dream #n`; eject it to read it, insert your own card to
+take the city over, eject that to hand it back. See [fragments.md](fragments.md).

@@ -49,14 +49,42 @@ public final class Integrity {
 		return true;
 	}
 
-	/** Cell-local positions a piston in the blueprint may push into. */
+	/**
+	 * Cell-local positions a piston in the blueprint may move: the block in front of it, every
+	 * block a slime or honey spine in front of it carries along, and where all of those go.
+	 */
 	public static Set<BlockPos> dynamicPositions(Cell cell) {
+		java.util.Map<BlockPos, BlockState> at = new java.util.HashMap<>();
+		for (Cell.CellBlock b : cell.blocks()) {
+			at.put(b.pos(), b.state());
+		}
 		Set<BlockPos> out = new HashSet<>();
 		for (Cell.CellBlock b : cell.blocks()) {
-			if (b.state().getBlock() instanceof PistonBaseBlock) {
-				Direction f = b.state().getValue(BlockStateProperties.FACING);
-				out.add(b.pos().relative(f));
-				out.add(b.pos().relative(f, 2));
+			if (!(b.state().getBlock() instanceof PistonBaseBlock)) {
+				continue;
+			}
+			Direction f = b.state().getValue(BlockStateProperties.FACING);
+			Set<BlockPos> moved = new HashSet<>();
+			java.util.ArrayDeque<BlockPos> queue = new java.util.ArrayDeque<>();
+			queue.add(b.pos().relative(f));
+			while (!queue.isEmpty()) {
+				BlockPos p = queue.poll();
+				if (!moved.add(p)) {
+					continue;
+				}
+				BlockState s = at.get(p);
+				if (s != null && (s.is(Blocks.SLIME_BLOCK) || s.is(Blocks.HONEY_BLOCK))) {
+					for (Direction d : Direction.values()) {
+						BlockPos n = p.relative(d);
+						if (at.containsKey(n) && !n.equals(b.pos())) {
+							queue.add(n);
+						}
+					}
+				}
+			}
+			for (BlockPos p : moved) {
+				out.add(p);
+				out.add(p.relative(f));
 			}
 		}
 		return out;

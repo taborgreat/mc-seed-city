@@ -1,10 +1,10 @@
 {
   "id": "seedcity:storage_cell",
   "kind": "storage",
-  "size": [7, 5, 7],
+  "size": [7, 8, 7],
   "ports": [],
   "truth": "none",
   "weights": { "core": 2, "residential": 1, "forge": 1, "plaza": 1, "ram": 0, "storage": 8 },
-  "cost": { "redstone": 0, "stone": 90, "wood": 40 },
+  "cost": { "redstone": 0, "stone": 100, "wood": 60 },
   "setpiece": true
 }

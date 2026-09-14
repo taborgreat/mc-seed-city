@@ -33,6 +33,7 @@ public final class GuardianTests {
 
 	private static SeedCityConfig quietConfig() {
 		SeedCityConfig c = new SeedCityConfig();
+		c.dreamAtStart = false;
 		c.blocksPerSecond = 40;
 		c.maxBuilders = 1;
 		c.maxRadiusSlots = 0;           // no growth: the test lays the city out by hand
@@ -154,6 +155,7 @@ public final class GuardianTests {
 	@GameTest(structure = "seedcity:arena", maxTicks = 40)
 	public void plannerPlantsAFault(GameTestHelper helper) {
 		SeedCityConfig cfg = new SeedCityConfig();
+		cfg.dreamAtStart = false;
 		cfg.faultsPerCity = 1;
 		cfg.faultAfterLiveCells = 3;
 		List<String> plan = CityState.previewPlan(0xC0FFEEL, 30, cfg);

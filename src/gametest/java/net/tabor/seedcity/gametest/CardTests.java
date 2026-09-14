@@ -36,6 +36,7 @@ public final class CardTests {
 
 	private static SeedCityConfig quietConfig() {
 		SeedCityConfig c = new SeedCityConfig();
+		c.dreamAtStart = false;
 		c.blocksPerSecond = 40;
 		c.maxBuilders = 1;
 		c.maxRadiusSlots = 0;

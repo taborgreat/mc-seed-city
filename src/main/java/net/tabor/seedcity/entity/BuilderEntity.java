@@ -2,6 +2,9 @@ package net.tabor.seedcity.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -31,6 +34,8 @@ import java.util.Optional;
  * cell to the city and moves on. It never decides what to build; the city does.
  */
 public final class BuilderEntity extends FlyingCityMob {
+	private static final EntityDataAccessor<Boolean> BUILDING = SynchedEntityData.defineId(BuilderEntity.class, EntityDataSerializers.BOOLEAN);
+	private static final EntityDataAccessor<Boolean> CARRYING = SynchedEntityData.defineId(BuilderEntity.class, EntityDataSerializers.BOOLEAN);
 	private enum Phase { IDLE, TO_STORAGE, WITHDRAW, TO_SITE, BUILD }
 
 	private BuildTask task;
@@ -45,6 +50,23 @@ public final class BuilderEntity extends FlyingCityMob {
 
 	public static AttributeSupplier.Builder createAttributes() {
 		return createFlyingAttributes(20.0);
+	}
+
+	@Override
+	protected void defineSynchedData(SynchedEntityData.Builder builder) {
+		super.defineSynchedData(builder);
+		builder.define(BUILDING, false);
+		builder.define(CARRYING, false);
+	}
+
+	/** Presentation only: the client animates the work arm while this is set. */
+	public boolean isBuilding() {
+		return entityData.get(BUILDING);
+	}
+
+	/** Presentation only: the client shows the cargo stone while this is set. */
+	public boolean isCarryingMaterials() {
+		return entityData.get(CARRYING);
 	}
 
 	public String status() {
@@ -112,6 +134,9 @@ public final class BuilderEntity extends FlyingCityMob {
 			SeedCity.LOGGER.error("Builder {} failed while {}; re-queuing", getUUID(), phase, e);
 			dropTask(level);
 		}
+		// Only presentation flags cross to the client; the task and phase stay server-side.
+		entityData.set(BUILDING, task != null && phase == Phase.BUILD);
+		entityData.set(CARRYING, task != null && (phase == Phase.TO_SITE || phase == Phase.BUILD));
 	}
 
 	private void work(ServerLevel level) {
@@ -183,7 +208,7 @@ public final class BuilderEntity extends FlyingCityMob {
 
 	private void build(ServerLevel level, SeedCityConfig cfg) {
 		BlockPos next = task.nextPos();
-		Vec3 stand = Vec3.atCenterOf(next).add(0, 2, 0);
+		Vec3 stand = hoverAbove(next, task.placement().footprint().maxY() + 2);
 		if (position().distanceTo(stand) > 4.0) {
 			flyToward(stand, cfg.builderSpeed, 4.0);
 		} else {

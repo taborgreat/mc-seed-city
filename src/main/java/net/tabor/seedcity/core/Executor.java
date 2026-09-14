@@ -135,6 +135,9 @@ public final class Executor {
 		wanted.merge(SeedCity.id(type), count, Integer::sum);
 	}
 
+	/** Ports already counted as needs, so two ops on one missing port ask for one cell, not two. */
+	private final java.util.Set<String> neededPorts = new java.util.HashSet<>();
+
 	private List<PortRef> bindPorts(Instr in) throws CardError {
 		PortName pn = PortName.parse(in.port());
 		Optional<Cell> cell = CellLibrary.get(SeedCity.id(pn.type()));
@@ -155,7 +158,7 @@ public final class Executor {
 			for (CityState.Slot s : built) {
 				refs.add(new PortRef(s.key, pn.port()));
 			}
-			if (refs.isEmpty()) {
+			if (refs.isEmpty() && neededPorts.add(pn.type() + ".*")) {
 				need(pn.type(), 1);
 			}
 		} else {
@@ -167,7 +170,9 @@ public final class Executor {
 				}
 			}
 			if (match == null) {
-				need(pn.type(), Math.max(1, ord - built.size()));
+				if (neededPorts.add(pn.type() + "." + ord)) {
+					need(pn.type(), Math.max(1, ord - built.size()));
+				}
 			} else {
 				refs.add(new PortRef(match.key, pn.port()));
 			}

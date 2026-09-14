@@ -45,10 +45,38 @@ public final class SeedCityConfig {
 	public int wardenSweepTicks = 100;
 	/** Spawn a Sentinel on every built register block. */
 	public boolean sentinelsOnRegisters = true;
+	/** Redstone Rats kept near each city (extra, outside the five mobs); 0 disables them. */
+	public int maxRedstoneRats = 2;
 	/** Couriers a city may have in flight at once. */
 	public int maxCouriers = 4;
 	/** Angular sectors the city is zoned into (Forge, RAM, Storage, residential, plaza), seed-shuffled. */
 	public int sectors = 5;
+	/** Terrain (Phase 5): a slot is unbuildable when the ground under it varies by more than this. */
+	public int slopeLimit = 3;
+	/** A slot joins a neighbour's level (so their ports mate) when the ground is within this of it. */
+	public int terrainStep = 2;
+	/** How far below a floor the Builder will lay foundation before calling the drop too steep. */
+	public int foundationDepth = 6;
+	/** Width of the earth apron banked against the city's open edges; 0 turns blending off. */
+	public int apronWidth = 3;
+	/** Collectors (doc 24: max_collectors default 4). */
+	public int maxCollectors = 4;
+	/** Blocks a Collector mines per trip before hauling the load home. */
+	public int collectorLoad = 4;
+	/** Ticks a Collector spends breaking one block. */
+	public int collectorTicksPerBlock = 30;
+	/** How far beyond the city's radius Collectors will go for material. */
+	public int collectorRange = 48;
+	/** Ledger units the city tries to keep in stock per currency; below it Collectors are sent out. */
+	public int reserveRedstone = 120;
+	public int reserveStone = 400;
+	public int reserveWood = 120;
+	/** L3: seconds the card slot must stay empty with an idle frontier before the city dreams a card (doc 25: 10 minutes). */
+	public int dreamAfterSeconds = 600;
+	/** L3: how long a dream runs before the city dreams another, if still idle and undisturbed. */
+	public int dreamLengthSeconds = 1800;
+	/** A new city with nothing in its reader dreams its first card at once, so it always has a purpose. */
+	public boolean dreamAtStart = true;
 
 	private static SeedCityConfig current = new SeedCityConfig();
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();

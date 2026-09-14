@@ -5,7 +5,15 @@
 	"block.seedcity.card_reader": "Card Reader",
 	"item.seedcity.blueprint": "Blueprint",
 	"entity.seedcity.builder": "Builder",
-	"entity.seedcity.warden": "Warden",
+	"entity.seedcity.warden": "Rectifier",
 	"entity.seedcity.sentinel": "Sentinel",
-	"entity.seedcity.courier": "Courier"
+	"entity.seedcity.courier": "Courier",
+	"item.seedcity.builder_spawn_egg": "Builder Spawn Egg",
+	"item.seedcity.courier_spawn_egg": "Courier Spawn Egg",
+	"item.seedcity.sentinel_spawn_egg": "Sentinel Spawn Egg",
+	"entity.seedcity.redstone_rat": "Redstone Rat",
+	"item.seedcity.rectifier_spawn_egg": "Rectifier Spawn Egg",
+	"item.seedcity.redstone_rat_spawn_egg": "Redstone Rat Spawn Egg",
+	"entity.seedcity.collector": "Collector",
+	"item.seedcity.collector_spawn_egg": "Collector Spawn Egg"
 }

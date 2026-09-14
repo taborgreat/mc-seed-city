@@ -1,6 +1,9 @@
 package net.tabor.seedcity.entity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EntityType;
@@ -27,6 +30,7 @@ import java.util.Optional;
  * until the Core sends another, five minutes later.
  */
 public final class WardenEntity extends FlyingCityMob {
+	private static final EntityDataAccessor<Boolean> REPAIRING = SynchedEntityData.defineId(WardenEntity.class, EntityDataSerializers.BOOLEAN);
 	private enum Phase { PATROL, TO_SITE, REPAIR }
 
 	private String district = "core";
@@ -43,6 +47,17 @@ public final class WardenEntity extends FlyingCityMob {
 
 	public static AttributeSupplier.Builder createAttributes() {
 		return createFlyingAttributes(40.0);
+	}
+
+	@Override
+	protected void defineSynchedData(SynchedEntityData.Builder builder) {
+		super.defineSynchedData(builder);
+		builder.define(REPAIRING, false);
+	}
+
+	/** Presentation only: the client swings the hammer while this is set. */
+	public boolean isRepairing() {
+		return entityData.get(REPAIRING);
 	}
 
 	public void assign(BlockPos city, String district) {
@@ -88,6 +103,7 @@ public final class WardenEntity extends FlyingCityMob {
 			task = null;
 			phase = Phase.PATROL;
 		}
+		entityData.set(REPAIRING, task != null && phase == Phase.REPAIR);
 	}
 
 	private void work(ServerLevel level) {
@@ -154,7 +170,7 @@ public final class WardenEntity extends FlyingCityMob {
 
 	private void repair(ServerLevel level, CityState c, SeedCityConfig cfg) {
 		BlockPos next = task.nextPos();
-		Vec3 stand = Vec3.atCenterOf(next).add(0, 2, 0);
+		Vec3 stand = hoverAbove(next, task.placement().footprint().maxY() + 2);
 		if (position().distanceTo(stand) > 4.0) {
 			flyToward(stand, cfg.builderSpeed, 4.0);
 		} else {

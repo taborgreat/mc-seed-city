@@ -7,6 +7,6 @@
   ],
   "truth": "actuator",
   "weights": { "core": 1, "residential": 2, "forge": 0, "plaza": 4, "ram": 0, "storage": 1 },
-  "cost": { "redstone": 8, "stone": 60, "wood": 12 },
+  "cost": { "redstone": 10, "stone": 90, "wood": 24 },
   "setpiece": true
 }

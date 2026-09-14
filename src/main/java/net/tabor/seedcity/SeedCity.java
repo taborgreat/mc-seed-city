@@ -31,10 +31,13 @@ public final class SeedCity implements ModInitializer {
 	public void onInitialize() {
 		SeedCityConfig.load();
 		SeedCityBlocks.init();
-		SeedCityItems.init();
 		SeedCityEntities.init();
+		net.tabor.seedcity.extra.RedstoneRats.init();
+		SeedCityItems.init(); // spawn eggs need the entity types
 		CellLibrary.init();
 		net.tabor.seedcity.card.CardLibrary.init();
+		net.tabor.seedcity.card.FragmentLibrary.init();
+		net.tabor.seedcity.core.PlayerBlocks.init();
 		Verifier.init();
 		CityManager.init();
 		SeedCityCommands.init();

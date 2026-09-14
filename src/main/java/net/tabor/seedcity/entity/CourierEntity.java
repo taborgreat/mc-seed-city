@@ -41,6 +41,16 @@ public final class CourierEntity extends FlyingCityMob {
 		return phase == Phase.IDLE;
 	}
 
+	@Override
+	public int getMaxHeadXRot() {
+		return 55;
+	}
+
+	@Override
+	public int getMaxHeadYRot() {
+		return 35;
+	}
+
 	public String status() {
 		return "courier " + phase + (mail == null ? "" : " " + (mail.read() ? "reading " : "delivering " + mail.value() + " to ") + mail.slot() + "." + mail.port());
 	}

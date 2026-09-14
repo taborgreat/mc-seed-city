@@ -11,6 +11,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Rotation;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.tabor.seedcity.SeedCity;
 import net.tabor.seedcity.SeedCityBlocks;
 import net.tabor.seedcity.build.BuildTask;
@@ -23,10 +24,12 @@ import net.tabor.seedcity.cell.Port;
 import net.tabor.seedcity.cell.PortDir;
 import net.tabor.seedcity.config.SeedCityConfig;
 import net.tabor.seedcity.entity.BuilderEntity;
+import net.tabor.seedcity.entity.CollectorEntity;
 import net.tabor.seedcity.entity.CourierEntity;
 import net.tabor.seedcity.entity.SeedCityEntities;
 import net.tabor.seedcity.entity.SentinelEntity;
 import net.tabor.seedcity.entity.WardenEntity;
+import net.tabor.seedcity.extra.RedstoneRats;
 import net.tabor.seedcity.grammar.Choice;
 import net.tabor.seedcity.grammar.Constraint;
 import net.tabor.seedcity.grammar.FrontierSlot;
@@ -49,6 +52,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -122,6 +126,8 @@ public final class CityState {
 		public int retries;
 		/** 1-based build order among cells of the same type; how cards name a cell (bridge.2.in). */
 		public int ordinal;
+		/** Floor level chosen from the terrain (Phase 5); null means the Seed's level. */
+		public Integer y;
 
 		Slot(SlotKey key, SlotStatus status) {
 			this.key = key;
@@ -142,7 +148,7 @@ public final class CityState {
 	}
 
 	private record SlotData(int x, int z, String status, Optional<Identifier> cell, Rotation rotation, List<String> rejected,
-							long since, String note, boolean faulted, boolean guarded, int ordinal) {
+							long since, String note, boolean faulted, boolean guarded, int ordinal, Optional<Integer> y) {
 		static final Codec<SlotData> CODEC = RecordCodecBuilder.create(i -> i.group(
 				Codec.INT.fieldOf("x").forGetter(SlotData::x),
 				Codec.INT.fieldOf("z").forGetter(SlotData::z),
@@ -154,12 +160,13 @@ public final class CityState {
 				Codec.STRING.optionalFieldOf("note", "").forGetter(SlotData::note),
 				Codec.BOOL.optionalFieldOf("faulted", false).forGetter(SlotData::faulted),
 				Codec.BOOL.optionalFieldOf("guarded", false).forGetter(SlotData::guarded),
-				Codec.INT.optionalFieldOf("ordinal", 0).forGetter(SlotData::ordinal)
+				Codec.INT.optionalFieldOf("ordinal", 0).forGetter(SlotData::ordinal),
+				Codec.INT.optionalFieldOf("y").forGetter(SlotData::y)
 		).apply(i, SlotData::new));
 
 		static SlotData of(Slot s) {
 			return new SlotData(s.key.x(), s.key.z(), s.status.name(), Optional.ofNullable(s.cell), s.rotation,
-					List.copyOf(s.rejected), s.since, s.note, s.faulted, s.guarded, s.ordinal);
+					List.copyOf(s.rejected), s.since, s.note, s.faulted, s.guarded, s.ordinal, Optional.ofNullable(s.y));
 		}
 
 		Slot toSlot() {
@@ -172,6 +179,7 @@ public final class CityState {
 			s.faulted = faulted;
 			s.guarded = guarded;
 			s.ordinal = ordinal;
+			s.y = y.orElse(null);
 			if (s.status == SlotStatus.BUILDING || s.status == SlotStatus.VERIFY) {
 				s.status = SlotStatus.PLANNED;   // re-run the task after a reload; correct blocks are skipped
 			}
@@ -198,10 +206,14 @@ public final class CityState {
 			SlotData.CODEC.listOf().fieldOf("slots").forGetter(c -> c.slots.values().stream().map(SlotData::of).toList()),
 			Codec.STRING.optionalFieldOf("card", "").forGetter(c -> c.cardText == null ? "" : c.cardText),
 			ItemStack.OPTIONAL_CODEC.optionalFieldOf("card_item", ItemStack.EMPTY).forGetter(c -> c.cardItem),
-			TerminalData.CODEC.listOf().optionalFieldOf("terminals", List.of()).forGetter(c -> c.terminals.entrySet().stream().map(e -> new TerminalData(e.getKey(), e.getValue())).toList())
+			TerminalData.CODEC.listOf().optionalFieldOf("terminals", List.of()).forGetter(c -> c.terminals.entrySet().stream().map(e -> new TerminalData(e.getKey(), e.getValue())).toList()),
+			Codec.INT.optionalFieldOf("dreams", 0).forGetter(c -> c.dreamCount),
+			Codec.BOOL.optionalFieldOf("dreamed", false).forGetter(c -> c.dreamed),
+			Codec.STRING.optionalFieldOf("running", "").forGetter(c -> c.runningText == null ? "" : c.runningText)
 	).apply(i, CityState::new));
 
 	private final BlockPos seedPos;
+	private long nextRatSpawnAttempt;   // not persisted; a fresh load just tries again
 	private final long citySeed;
 	private boolean frozen;
 	private int builtCount;
@@ -214,8 +226,12 @@ public final class CityState {
 	private ItemStack cardItem = ItemStack.EMPTY;
 	/** Terminal positions and what stood there before. Persisted. */
 	private final Map<BlockPos, BlockState> terminals = new LinkedHashMap<>();
-	/** The running or planned program. Rebuilt from cardText after a reload. Not persisted. */
+	/** The running program. Rebuilt after a reload from runningText, else from cardText. Not persisted. */
 	private Executor executor;
+	/** A card accepted as a plan, waiting for its hardware; the running program keeps going meanwhile. */
+	private Executor plan;
+	/** Text of the running program when the card in the reader is a plan that superseded it. Persisted. */
+	private String runningText;
 	private String cardError;
 	private boolean programRestorePending;
 	/** Finished cells waiting for their turn under the verifier. Not persisted. */
@@ -225,9 +241,19 @@ public final class CityState {
 	private final Map<String, Long> wardenCooldown = new HashMap<>();
 	/** Per-city config, set by tests or tools; null means the global config. Not persisted. */
 	private SeedCityConfig configOverride;
+	/** Debug labels over every built cell (/seedcity labels). Not persisted. */
+	private boolean labels;
+	/** Slots whose ground could not be read this round (chunk not loaded). Not persisted. */
+	private final Set<SlotKey> deferred = new HashSet<>();
+	/** L3: how many cards the city has dreamed, and whether the current card is one of them. */
+	private int dreamCount;
+	private boolean dreamed;
+	/** Game time of the last construction activity and of the last dream. Not persisted. */
+	private long lastActivity;
+	private long lastDream;
 
 	private CityState(BlockPos seedPos, long citySeed, boolean frozen, int builtCount, int redstone, int stone, int wood, List<SlotData> slotData,
-					  String card, ItemStack cardItem, List<TerminalData> terminalData) {
+					  String card, ItemStack cardItem, List<TerminalData> terminalData, int dreamCount, boolean dreamed, String running) {
 		this.seedPos = seedPos;
 		this.citySeed = citySeed;
 		this.frozen = frozen;
@@ -244,11 +270,14 @@ public final class CityState {
 		for (TerminalData t : terminalData) {
 			terminals.put(t.pos(), t.saved());
 		}
-		this.programRestorePending = this.cardText != null;
+		this.runningText = running.isEmpty() ? null : running;
+		this.programRestorePending = this.cardText != null || this.runningText != null;
+		this.dreamCount = dreamCount;
+		this.dreamed = dreamed;
 	}
 
 	private CityState(BlockPos seedPos, long citySeed, int redstone, int stone, int wood) {
-		this(seedPos, citySeed, false, 0, redstone, stone, wood, List.of(), "", ItemStack.EMPTY, List.of());
+		this(seedPos, citySeed, false, 0, redstone, stone, wood, List.of(), "", ItemStack.EMPTY, List.of(), 0, false, "");
 	}
 
 	/**
@@ -274,7 +303,7 @@ public final class CityState {
 		CityState c = new CityState(BlockPos.ZERO, citySeed, cfg.initialRedstone, cfg.initialStone, cfg.initialWood);
 		c.overrideConfig(cfg);
 		c.forceRoot();
-		c.planAhead(k -> true, count, cfg);
+		c.planAhead(k -> new Fit(c.coreOrigin().getY(), null, false), count, cfg);
 		List<String> out = new ArrayList<>();
 		for (Slot s : c.slots.values()) {
 			out.add(s.toString());
@@ -325,12 +354,41 @@ public final class CityState {
 		return builtCount;
 	}
 
+	public int stock(Terrain.Kind kind) {
+		return switch (kind) {
+			case REDSTONE -> redstone;
+			case STONE -> stone;
+			case WOOD -> wood;
+		};
+	}
+
 	public BlockPos coreOrigin() {
 		return seedPos.offset(-3, -1, -3);
 	}
 
 	public BlockPos slotOrigin(SlotKey k) {
-		return coreOrigin().offset(k.x() * SLOT, 0, k.z() * SLOT);
+		BlockPos flat = coreOrigin();
+		return new BlockPos(flat.getX() + k.x() * SLOT, slotY(k), flat.getZ() + k.z() * SLOT);
+	}
+
+	/** A slot's floor level: chosen from the terrain when it was planned, else the Seed's. */
+	public int slotY(SlotKey k) {
+		Slot s = slots.get(k);
+		return s != null && s.y != null ? s.y : coreOrigin().getY();
+	}
+
+	/** Two slots can only mate ports when their floors are level. */
+	private boolean level(SlotKey a, SlotKey b) {
+		return slotY(a) == slotY(b);
+	}
+
+	/** True when a column lies inside any slot the city has or will have, at any height. */
+	public boolean inCity(BlockPos p) {
+		BlockPos flat = coreOrigin();
+		int kx = Math.floorDiv(p.getX() - flat.getX(), SLOT);
+		int kz = Math.floorDiv(p.getZ() - flat.getZ(), SLOT);
+		Slot s = slots.get(new SlotKey(kx, kz));
+		return s != null && s.occupies();
 	}
 
 	public Optional<Slot> slot(SlotKey k) {
@@ -622,7 +680,8 @@ public final class CityState {
 	/**
 	 * Parses and resolves a card. A parse or binding error is reported with its line and leaves
 	 * the previous program running. A card whose hardware is missing is accepted as a plan: its
-	 * needs become goals for the builders and it goes live when they are built (doc 15.2).
+	 * needs become goals for the builders, the previous program (or the hardware default) keeps
+	 * running meanwhile, and the plan goes live by itself when the hardware is built (doc 15.2).
 	 */
 	public CardResult insertCard(ServerLevel level, String text, ItemStack item) {
 		this.level = level;
@@ -637,17 +696,30 @@ public final class CityState {
 			return new CardResult(false, "Card rejected, " + e + ". " + (executor == null ? "The city runs its default." : "The previous card keeps running."), ItemStack.EMPTY);
 		}
 		ItemStack previous = cardItem;
-		if (executor != null) {
-			clearTerminals(level);
-		}
+		String previousText = cardText;
 		cardError = null;
 		cardText = text;
 		cardItem = item == null ? ItemStack.EMPTY : item;
-		executor = next;
 		programRestorePending = false;
-		String msg = next.live()
-				? "Card accepted and running (" + program.code().size() + " ops)."
-				: "Card accepted as a plan; the city needs " + String.join(", ", next.needs()) + " before it can run.";
+		dreamed = false;
+		lastActivity = level.getGameTime();
+		String msg;
+		if (next.live()) {
+			if (executor != null) {
+				clearTerminals(level);
+			}
+			executor = next;
+			plan = null;
+			runningText = null;
+			msg = "Card accepted and running (" + program.code().size() + " ops).";
+		} else {
+			if (executor != null && runningText == null) {
+				runningText = previousText;
+			}
+			plan = next;
+			msg = "Card accepted as a plan; the city needs " + String.join(", ", next.needs()) + " before it can run"
+					+ (executor != null ? "; the previous card keeps running meanwhile." : ".");
+		}
 		SeedCity.LOGGER.info("City {}: {}", seedPos.toShortString(), msg);
 		return new CardResult(true, msg, previous);
 	}
@@ -663,14 +735,24 @@ public final class CityState {
 		cardText = null;
 		cardItem = ItemStack.EMPTY;
 		executor = null;
+		plan = null;
+		runningText = null;
 		cardError = null;
 		programRestorePending = false;
+		dreamed = false;
+		lastActivity = level.getGameTime();
 		SeedCity.LOGGER.info("City {}: card ejected", seedPos.toShortString());
 		return out;
 	}
 
+	/** The running program. */
 	public Optional<Executor> executor() {
 		return Optional.ofNullable(executor);
+	}
+
+	/** The plan waiting for hardware, if the card in the reader is one. */
+	public Optional<Executor> plan() {
+		return Optional.ofNullable(plan);
 	}
 
 	public boolean programLive() {
@@ -679,7 +761,40 @@ public final class CityState {
 
 	/** Cells the current plan still needs, for the grammar. */
 	public Map<Identifier, Integer> wantedCells() {
-		return executor == null || executor.live() ? Map.of() : executor.wanted();
+		return plan == null ? Map.of() : plan.wanted();
+	}
+
+	/** After a reload: the running program comes back from its text, the card in the reader from its. */
+	private void restoreProgram(ServerLevel level) {
+		if (runningText != null) {
+			try {
+				Executor running = Executor.resolve(net.tabor.seedcity.card.CardParser.parse(runningText), this);
+				if (running.live()) {
+					executor = running;
+				} else {
+					runningText = null;
+				}
+			} catch (net.tabor.seedcity.card.CardError e) {
+				runningText = null;
+			}
+		}
+		if (cardText != null) {
+			try {
+				Executor card = Executor.resolve(net.tabor.seedcity.card.CardParser.parse(cardText), this);
+				if (card.live()) {
+					if (executor != null) {
+						clearTerminals(level);
+					}
+					executor = card;
+					plan = null;
+					runningText = null;
+				} else {
+					plan = card;
+				}
+			} catch (net.tabor.seedcity.card.CardError e) {
+				cardError = "CARD ERROR " + e;
+			}
+		}
 	}
 
 	/** Called every game tick by the manager while the seed chunk ticks. */
@@ -690,37 +805,41 @@ public final class CityState {
 		}
 		if (programRestorePending) {
 			programRestorePending = false;
-			if (cardText != null) {
-				ItemStack keep = cardItem;
-				insertCard(level, cardText, keep);
-			}
+			restoreProgram(level);
 		}
-		if (executor == null) {
-			return;
-		}
-		if (!executor.live()) {
+		if (plan != null && level.getGameTime() % 40 == 0) {
 			// hardware may have arrived since the card was inserted: try to bind again
-			if (level.getGameTime() % 40 == 0) {
-				try {
-					Executor again = Executor.resolve(executor.program(), this);
-					if (again.live()) {
-						executor = again;
-						SeedCity.LOGGER.info("City {}: plan became live", seedPos.toShortString());
+			try {
+				Executor again = Executor.resolve(plan.program(), this);
+				if (again.live()) {
+					if (executor != null) {
+						clearTerminals(level);
 					}
-				} catch (net.tabor.seedcity.card.CardError e) {
-					cardError = "CARD ERROR " + e;
+					executor = again;
+					plan = null;
+					runningText = null;
+					SeedCity.LOGGER.info("City {}: plan became live", seedPos.toShortString());
 				}
+			} catch (net.tabor.seedcity.card.CardError e) {
+				cardError = "CARD ERROR " + e;
 			}
-			return;
 		}
-		executor.tick(level);
+		if (executor != null && executor.live()) {
+			executor.tick(level);
+		}
 	}
 
 	public String programSummary() {
-		if (executor == null) {
-			return cardError != null ? cardError + "; running the hardware default" : "L0: hardware default";
+		StringBuilder sb = new StringBuilder();
+		if (executor != null) {
+			sb.append(executor.status());
+		} else {
+			sb.append(cardError != null ? cardError + "; running the hardware default" : "L0: hardware default");
 		}
-		return executor.status();
+		if (plan != null) {
+			sb.append(" | ").append(plan.status());
+		}
+		return sb.toString();
 	}
 
 	/** What the Reader wall shows. */
@@ -730,16 +849,24 @@ public final class CityState {
 		if (cardError != null) {
 			lines.add(cardError);
 		}
-		if (executor == null) {
+		if (executor == null && plan == null) {
 			lines.add("no card: hardware default");
 		} else {
-			lines.add(executor.status());
-			StringBuilder regs = new StringBuilder();
-			for (Map.Entry<Integer, SlotKey> e : executor.registers().entrySet()) {
-				regs.append("R").append(e.getKey()).append('=').append(Math.max(0, readPort(e.getValue(), "out"))).append("  ");
+			if (dreamed && plan == null) {
+				lines.add("DREAM #" + dreamCount + " (the city wrote this card)");
 			}
-			if (!regs.isEmpty()) {
-				lines.add(regs.toString().trim());
+			if (executor != null) {
+				lines.add(executor.status());
+				StringBuilder regs = new StringBuilder();
+				for (Map.Entry<Integer, SlotKey> e : executor.registers().entrySet()) {
+					regs.append("R").append(e.getKey()).append('=').append(Math.max(0, readPort(e.getValue(), "out"))).append("  ");
+				}
+				if (!regs.isEmpty()) {
+					lines.add(regs.toString().trim());
+				}
+			}
+			if (plan != null) {
+				lines.add((dreamed ? "DREAM #" + dreamCount + " " : "") + plan.status() + (executor != null ? " (previous card runs meanwhile)" : ""));
 			}
 		}
 		lines.add("clock " + (clockSignal(level) > 0 ? "HIGH" : "low") + "  built " + builtCount);
@@ -778,6 +905,10 @@ public final class CityState {
 				continue;
 			}
 			if (n == null || !n.occupies() || n.cell == null) {
+				continue;
+			}
+			if (!level(k, nk)) {
+				out.add(Constraint.wall(side));   // a step in the ground: the street ends here
 				continue;
 			}
 			Port facingUs = portFacing(n, side);
@@ -829,7 +960,7 @@ public final class CityState {
 						continue;
 					}
 					Slot n = slots.get(s.key.offset(side));
-					if (n == null || !live.contains(n.key)) {
+					if (n == null || !live.contains(n.key) || !level(s.key, n.key)) {
 						continue;
 					}
 					Port theirs = portFacing(n, side);
@@ -873,7 +1004,7 @@ public final class CityState {
 		SlotKey bestPending = null;
 		SlotKey bestAny = null;
 		for (Slot s : slots.values()) {
-			if (s.status == SlotStatus.PENDING) {
+			if (s.status == SlotStatus.PENDING && !deferred.contains(s.key)) {
 				bestPending = better(bestPending, s.key);
 				if (fedByLive(s.key, live)) {
 					bestLive = better(bestLive, s.key);
@@ -886,7 +1017,7 @@ public final class CityState {
 			}
 			for (Direction d : SIDES) {
 				SlotKey k = s.key.offset(d);
-				if (slots.containsKey(k) || k.chebyshev() > maxRadius) {
+				if (slots.containsKey(k) || k.chebyshev() > maxRadius || deferred.contains(k)) {
 					continue;
 				}
 				bestAny = better(bestAny, k);
@@ -908,7 +1039,7 @@ public final class CityState {
 	private boolean fedByLive(SlotKey k, Set<SlotKey> live) {
 		for (Direction side : SIDES) {
 			Slot n = slots.get(k.offset(side));
-			if (n == null || !live.contains(n.key)) {
+			if (n == null || !live.contains(n.key) || (slots.containsKey(k) && !level(k, n.key))) {
 				continue;
 			}
 			Port p = portFacing(n, side);
@@ -953,8 +1084,97 @@ public final class CityState {
 		return n;
 	}
 
+	/** How a slot sits on the land: its floor level, or why it cannot be built, or that the ground is not loaded yet. */
+	public record Fit(int y, String reason, boolean unloaded) {
+		public boolean ok() {
+			return reason == null && !unloaded;
+		}
+	}
+
+	/** The tallest cell the grammar may choose (forced cells such as the clock tower are checked by their own height). */
+	private int maxCellHeight() {
+		int h = 1;
+		for (Cell c : CellLibrary.all()) {
+			boolean chosen = false;
+			for (String d : List.of("core", "residential", "forge", "plaza", "ram", "storage")) {
+				chosen |= c.definition().weight(d) > 0;
+			}
+			if (chosen) {
+				h = Math.max(h, c.size().getY());
+			}
+		}
+		return h;
+	}
+
+	/** The level of a neighbour this slot should join, preferring one with a port on the shared face. */
+	private Integer neighbourLevel(SlotKey k) {
+		Integer any = null;
+		for (Direction side : SIDES) {
+			Slot n = slots.get(k.offset(side));
+			if (n == null || !n.occupies() || n.cell == null) {
+				continue;
+			}
+			int y = slotY(n.key);
+			if (portFacing(n, side) != null) {
+				return y;
+			}
+			if (any == null) {
+				any = y;
+			}
+		}
+		return any;
+	}
+
+	/**
+	 * Fits a slot to the terrain (doc 8): the ground under it must be readable, dry and within the
+	 * slope limit; the floor goes at the median ground level, or at a neighbour's level when the
+	 * ground is close enough that the street can continue; the drop below must be within reach of
+	 * a foundation; and nothing a player built may stand in the way.
+	 */
+	public Fit fitSlot(ServerLevel level, SlotKey k) {
+		SeedCityConfig cfg = cfg();
+		BlockPos flat = coreOrigin();
+		int x0 = flat.getX() + k.x() * SLOT;
+		int z0 = flat.getZ() + k.z() * SLOT;
+		if (!Terrain.loaded(level, x0 - 1, z0 - 1, SLOT + 2)) {
+			return new Fit(0, "unloaded", true);
+		}
+		Terrain.Survey sv = Terrain.survey(level, x0, z0, SLOT, cfg.slopeLimit);
+		if (!sv.ok()) {
+			return new Fit(0, sv.reason(), false);
+		}
+		int y;
+		if (k.chebyshev() == 0) {
+			y = flat.getY();   // the Core sits where the Seed was placed
+		} else {
+			Integer nb = neighbourLevel(k);
+			y = nb != null && Math.abs(sv.median() - nb) <= cfg.terrainStep ? nb : sv.median();
+		}
+		if (y - sv.min() > cfg.foundationDepth) {
+			return new Fit(0, "drop", false);
+		}
+		if (!Terrain.volumeClear(level, x0, z0, SLOT, y, maxCellHeight(), seedPos)) {
+			return new Fit(0, "occupied", false);
+		}
+		return new Fit(y, null, false);
+	}
+
+	/** Chunks a slot's footprint touches. */
+	private Set<Long> chunksOf(SlotKey k) {
+		BlockPos flat = coreOrigin();
+		int x0 = flat.getX() + k.x() * SLOT;
+		int z0 = flat.getZ() + k.z() * SLOT;
+		Set<Long> out = new HashSet<>();
+		for (int cx = x0 >> 4; cx <= (x0 + SLOT - 1) >> 4; cx++) {
+			for (int cz = z0 >> 4; cz <= (z0 + SLOT - 1) >> 4; cz++) {
+				out.add(((long) cx << 32) ^ (cz & 0xFFFFFFFFL));
+			}
+		}
+		return out;
+	}
+
 	/** Plans slots ahead of the builders until {@code lookahead} are waiting or the frontier is spent. */
-	void planAhead(Predicate<SlotKey> buildable, int lookahead, SeedCityConfig cfg) {
+	void planAhead(Function<SlotKey, Fit> fitter, int lookahead, SeedCityConfig cfg) {
 		int guard = 0;
 		while (unassignedPlanned() < lookahead && guard++ < 512) {
 			Set<SlotKey> clocked = clockedSlots(false);
@@ -965,11 +1185,28 @@ public final class CityState {
 			}
 			SlotKey k = next.get();
 			Slot s = slots.computeIfAbsent(k, key -> new Slot(key, SlotStatus.PENDING));
-			if (!buildable.test(k)) {
+			// the hard chunk cap (doc 4.3, 25): a slot that would spread the city past it is never planned
+			Set<Long> span = chunkSpan();
+			span.addAll(chunksOf(k));
+			if (span.size() > cfg.maxChunks) {
 				s.status = SlotStatus.BLOCKED;
-				s.note = "not buildable";
+				s.note = "chunk cap";
 				continue;
 			}
+			Fit fit = fitter.apply(k);
+			if (fit.unloaded()) {
+				deferred.add(k);
+				if (s.status == SlotStatus.PENDING && s.cell == null && !slots.containsKey(k)) {
+					slots.remove(k);
+				}
+				continue;
+			}
+			if (!fit.ok()) {
+				s.status = SlotStatus.BLOCKED;
+				s.note = fit.reason();
+				continue;
+			}
+			s.y = fit.y();
 			Random rng = new Random(mix(citySeed ^ (k.x() * 0x9E3779B97F4A7C15L) ^ (k.z() * 0xC2B2AE3D27D4EB4FL)));
 			boolean haveActuator = false;
 			for (Slot o : slots.values()) {
@@ -1031,37 +1268,16 @@ public final class CityState {
 		}
 	}
 
-	/**
-	 * A slot is buildable when its floor layer is solid and everything above it up to the tallest
-	 * cell is air (or the Seed itself). Anything else, including player builds, blocks the slot.
-	 */
+	/** Whether a slot fits the land right now (see {@link #fitSlot}). */
 	public boolean buildable(ServerLevel level, SlotKey k) {
-		BlockPos origin = slotOrigin(k);
-		int maxHeight = 1;
-		for (Cell c : CellLibrary.all()) {
-			maxHeight = Math.max(maxHeight, c.size().getY());
-		}
-		for (int x = 0; x < SLOT; x++) {
-			for (int z = 0; z < SLOT; z++) {
-				BlockPos floor = origin.offset(x, 0, z);
-				BlockState f = level.getBlockState(floor);
-				if (f.isAir() || !f.isCollisionShapeFullBlock(level, floor)) {
-					return false;
-				}
-				for (int y = 1; y < maxHeight; y++) {
-					BlockPos p = floor.above(y);
-					BlockState st = level.getBlockState(p);
-					if (st.isAir() || st.canBeReplaced() || st.is(SeedCityBlocks.PROBE)) {
-						continue;   // probes are ours and transient
-					}
-					if (p.equals(seedPos) && st.is(SeedCityBlocks.SEED)) {
-						continue;
-					}
-					return false;
-				}
-			}
-		}
-		return true;
+		return fitSlot(level, k).ok();
+	}
+
+	/** Whether a planned slot's volume is still clear at its chosen level (a player may have built there since). */
+	private boolean stillClear(ServerLevel level, SlotKey k) {
+		BlockPos o = slotOrigin(k);
+		int height = placement(k).map(p -> p.footprint().getYSpan()).orElse(maxCellHeight());
+		return Terrain.volumeClear(level, o.getX(), o.getZ(), SLOT, o.getY(), height, seedPos);
 	}
 
 	// ---- tasks ------------------------------------------------------------------------------
@@ -1076,9 +1292,18 @@ public final class CityState {
 		wood += sign * -c.wood();
 	}
 
-	private BuildTask taskFor(Slot s, Placement p) {
+	/** The growth task for a slot: site work from the land, the blueprint, and an apron on its open sides. */
+	private BuildTask taskFor(ServerLevel level, Slot s, Placement p) {
 		BlockPos omit = s.faulted ? p.cell().definition().fault() : null;
-		return new BuildTask(p, s.key, omit);
+		List<Direction> open = new ArrayList<>();
+		for (Direction d : SIDES) {
+			Slot n = slots.get(s.key.offset(d));
+			if (n == null || !n.occupies()) {
+				open.add(d);
+			}
+		}
+		SeedCityConfig cfg = cfg();
+		return BuildTask.growth(level, p, s.key, omit, open, this::inCity, cfg.foundationDepth, cfg.apronWidth);
 	}
 
 	/**
@@ -1090,23 +1315,21 @@ public final class CityState {
 			return Optional.empty();
 		}
 		SeedCityConfig cfg = cfg();
-		if (chunkSpan() >= cfg.maxChunks) {
-			return Optional.empty();
-		}
+		this.level = level;
+		Set<SlotKey> skip = new HashSet<>();
 		for (int attempt = 0; attempt < 8; attempt++) {
-			planAhead(k -> buildable(level, k), LOOKAHEAD, cfg);
+			planAhead(k -> fitSlot(level, k), LOOKAHEAD, cfg);
 			Slot pick = null;
 			for (Slot s : slots.values()) {
-				if (s.status == SlotStatus.PLANNED && s.builder == null && !adjacentToVerification(s.key)) {
+				if (s.status == SlotStatus.PLANNED && s.builder == null && !adjacentToVerification(s.key) && !skip.contains(s.key)) {
 					pick = pick == null || better(pick.key, s.key) == s.key ? s : pick;
 				}
 			}
 			if (pick == null) {
 				return Optional.empty();
 			}
-			if (!buildable(level, pick.key)) {
-				pick.status = SlotStatus.BLOCKED;
-				pick.note = "not buildable";
+			if (!stillClear(level, pick.key)) {
+				skip.add(pick.key);   // something stands there now; try it again later
 				continue;
 			}
 			Optional<Placement> placement = placement(pick);
@@ -1115,7 +1338,7 @@ public final class CityState {
 				pick.note = "cell " + pick.cell + " not in library";
 				continue;
 			}
-			BuildTask task = taskFor(pick, placement.get());
+			BuildTask task = taskFor(level, pick, placement.get());
 			if (!affordable(task.cost(), cfg)) {
 				return Optional.empty();
 			}
@@ -1144,6 +1367,7 @@ public final class CityState {
 			return;
 		}
 		s.builder = null;
+		spend(task.salvage(), -1);   // what was dug out of the way goes to the ledger
 		if (s.faulted) {
 			s.status = SlotStatus.FAULT;
 			SeedCity.LOGGER.info("City {}: fault planted at {} ({})", seedPos.toShortString(), s.key, s.cell);
@@ -1286,15 +1510,15 @@ public final class CityState {
 		return pendingVerify.size() + (verifyingSlot == null ? 0 : 1);
 	}
 
-	private int chunkSpan() {
+	/** Chunks touched by every slot the city has or will have. */
+	public Set<Long> chunkSpan() {
 		Set<Long> chunks = new HashSet<>();
 		for (Slot s : slots.values()) {
-			if (s.status == SlotStatus.BUILT) {
-				BlockPos o = slotOrigin(s.key);
-				chunks.add(((long) (o.getX() >> 4) << 32) ^ ((o.getZ() >> 4) & 0xFFFFFFFFL));
+			if (s.occupies()) {
+				chunks.addAll(chunksOf(s.key));
 			}
 		}
-		return chunks.size();
+		return chunks;
 	}
 
 	/**
@@ -1308,7 +1532,7 @@ public final class CityState {
 		s.faulted = faulted;
 		s.builder = null;
 		Placement p = placement(s).orElseThrow(() -> new IllegalArgumentException("unknown cell " + cellId));
-		BuildTask t = taskFor(s, p);
+		BuildTask t = taskFor(level, s, p);
 		while (!t.step(level)) {
 			// place everything now
 		}
@@ -1342,30 +1566,411 @@ public final class CityState {
 			return;
 		}
 		SeedCityConfig cfg = cfg();
+		deferred.clear();
 		List<BuilderEntity> builders = builders(level);
 		Set<UUID> alive = new HashSet<>();
 		for (BuilderEntity b : builders) {
 			alive.add(b.getUUID());
 		}
+		boolean busy = !pendingVerify.isEmpty() || verifyingSlot != null;
 		for (Slot s : slots.values()) {
 			if (s.status == SlotStatus.BUILDING && (s.builder == null || !alive.contains(s.builder))) {
 				s.status = SlotStatus.PLANNED;
 				s.builder = null;
 			}
+			if (s.status == SlotStatus.BUILDING || s.status == SlotStatus.VERIFY) {
+				busy = true;
+			}
+		}
+		long now = level.getGameTime();
+		if (busy || lastActivity == 0) {
+			lastActivity = now;
 		}
 		processVerification(level);
 		watchFaults(level);
 		if (slots.get(new SlotKey(0, 0)) != null && slots.get(new SlotKey(0, 0)).status == SlotStatus.BUILT) {
 			ReaderWall.update(level, seedPos, readerLines());
 		}
+		if (labels) {
+			CellLabels.update(level, this);
+		}
 		int desired = Math.min(cfg.maxBuilders, 1 + builtCount / cfg.cellsPerBuilder);
 		if (builders.size() < desired) {
 			spawnBuilder(level);
+		}
+		// extra, outside the five mobs: a couple of Redstone Rats keep creepers off the city
+		if (level.getGameTime() >= nextRatSpawnAttempt) {
+			nextRatSpawnAttempt = level.getGameTime() + RedstoneRats.PERIOD_TICKS;
+			if (level.getNearestPlayer(seedPos.getX(), seedPos.getY(), seedPos.getZ(), 64, false) != null) {
+				RedstoneRats.trySpawn(level, seedPos, cfg.maxRedstoneRats);
+			}
 		}
 		keepWardensPosted(level);
 		if (cfg.sentinelsOnRegisters) {
 			postSentinels(level);
 		}
+		keepCollectorsWorking(level);
+		// L3 (doc 14, 25). An empty reader: the city dreams something to run, or something to build
+		// toward, at once by default or after the idle time. A running dream: once it has run its
+		// length and the frontier is idle, the city dreams bigger, and the builders grow the hardware.
+		long quiet = cfg.dreamAfterSeconds * 20L;
+		long length = cfg.dreamLengthSeconds * 20L;
+		boolean coreBuilt = slots.get(new SlotKey(0, 0)) != null && slots.get(new SlotKey(0, 0)).status == SlotStatus.BUILT;
+		if (coreBuilt && cardText == null && (cfg.dreamAtStart || now - lastActivity >= quiet) && now - lastDream >= 100) {
+			dream(level, false);
+		} else if (coreBuilt && cardText != null && dreamed && plan == null && now - lastActivity >= quiet && now - lastDream >= length) {
+			dream(level, true);
+		}
+	}
+
+	// ---- collectors: supply (doc 20.1) ------------------------------------------------------
+
+	/** A gather order: what to bring back, and the block to start on. */
+	public record GatherOrder(Terrain.Kind kind, BlockPos source) {
+	}
+
+	/** Collector to the source it is working. Not persisted. */
+	private final Map<UUID, BlockPos> gathering = new HashMap<>();
+	/** Sources Collectors could not reach or that turned out empty, and until when to leave them alone. */
+	private final Map<BlockPos, Long> forbiddenSources = new HashMap<>();
+	private final Map<Terrain.Kind, Long> noSourceUntil = new java.util.EnumMap<>(Terrain.Kind.class);
+
+	/** Material the planned frontier needs beyond what is in stock, plus the configured reserve. */
+	public Optional<Terrain.Kind> deficit() {
+		SeedCityConfig cfg = cfg();
+		if (cfg.unlimitedMaterials) {
+			return Optional.empty();
+		}
+		int needR = cfg.reserveRedstone;
+		int needS = cfg.reserveStone;
+		int needW = cfg.reserveWood;
+		for (Slot s : slots.values()) {
+			if (s.status == SlotStatus.PLANNED && s.cell != null) {
+				Optional<Cell> cell = CellLibrary.get(s.cell);
+				if (cell.isPresent()) {
+					BuildTask.Cost c = BuildTask.Cost.of(cell.get().definition().cost());
+					needR += c.redstone();
+					needS += c.stone();
+					needW += c.wood();
+				}
+			}
+		}
+		double worst = 0;
+		Terrain.Kind pick = null;
+		double r = needR > 0 ? (double) (needR - redstone) / needR : 0;
+		double st = needS > 0 ? (double) (needS - stone) / needS : 0;
+		double w = needW > 0 ? (double) (needW - wood) / needW : 0;
+		if (r > worst) {
+			worst = r;
+			pick = Terrain.Kind.REDSTONE;
+		}
+		if (st > worst) {
+			worst = st;
+			pick = Terrain.Kind.STONE;
+		}
+		if (w > worst) {
+			pick = Terrain.Kind.WOOD;
+		}
+		return Optional.ofNullable(pick);
+	}
+
+	/** Hands a Collector something to fetch, or nothing when the stock is fine or no source is within reach. */
+	public Optional<GatherOrder> claimGather(ServerLevel level, UUID who, BlockPos from) {
+		this.level = level;
+		if (frozen) {
+			return Optional.empty();
+		}
+		Optional<Terrain.Kind> kind = deficit();
+		if (kind.isEmpty()) {
+			return Optional.empty();
+		}
+		long now = level.getGameTime();
+		if (noSourceUntil.getOrDefault(kind.get(), 0L) > now) {
+			return Optional.empty();
+		}
+		SeedCityConfig cfg = cfg();
+		int radius = cfg.maxRadiusSlots * SLOT + cfg.collectorRange;
+		Optional<BlockPos> src = Terrain.findSource(level, seedPos, kind.get(), radius, this::sourceForbidden);
+		if (src.isEmpty()) {
+			noSourceUntil.put(kind.get(), now + 600);
+			SeedCity.LOGGER.info("City {}: no {} within {} blocks; growth will stall on it", seedPos.toShortString(), kind.get().name, radius);
+			return Optional.empty();
+		}
+		gathering.put(who, src.get());
+		return Optional.of(new GatherOrder(kind.get(), src.get()));
+	}
+
+	/** Blocks no Collector may take: the city's own footprint and margin, another Collector's find, or a source given up on. */
+	public boolean sourceForbidden(BlockPos p) {
+		long now = level == null ? 0 : level.getGameTime();
+		Long until = forbiddenSources.get(p);
+		if (until != null && until > now) {
+			return true;
+		}
+		if (gathering.containsValue(p)) {
+			return true;
+		}
+		for (Direction d : new Direction[] {Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST}) {
+			if (inCity(p.relative(d))) {
+				return true;
+			}
+		}
+		return inCity(p);
+	}
+
+	public void forbidSource(BlockPos p) {
+		long now = level == null ? 0 : level.getGameTime();
+		forbiddenSources.put(p, now + 20L * 60 * 5);
+	}
+
+	public void releaseGather(UUID who) {
+		gathering.remove(who);
+	}
+
+	/** A Collector brings its load home. */
+	public void deposit(Terrain.Kind kind, int amount) {
+		switch (kind) {
+			case REDSTONE -> redstone += amount;
+			case STONE -> stone += amount;
+			case WOOD -> wood += amount;
+		}
+	}
+
+	/** Where a Collector unloads: beside the nearest warehouse, else at the Core. */
+	public Vec3 depositPoint(BlockPos from) {
+		BlockPos best = null;
+		double bestDist = Double.MAX_VALUE;
+		for (Slot s : slots.values()) {
+			if (s.status != SlotStatus.BUILT || s.cell == null) {
+				continue;
+			}
+			Optional<Cell> cell = CellLibrary.get(s.cell);
+			if (cell.isEmpty() || cell.get().definition().kind() != CellKind.STORAGE) {
+				continue;
+			}
+			BlockPos centre = slotOrigin(s.key).offset(3, 1, 3);
+			double d = centre.distSqr(from);
+			if (d < bestDist) {
+				bestDist = d;
+				best = centre;
+			}
+		}
+		return Vec3.atCenterOf(best != null ? best : seedPos);
+	}
+
+	public List<CollectorEntity> collectors(ServerLevel level) {
+		return level.getEntities(SeedCityEntities.COLLECTOR, bounds(), c -> seedPos.equals(c.cityPos()));
+	}
+
+	/** Sends Collectors out while the stock is short: one to start, one more per warehouse, up to the cap. */
+	private void keepCollectorsWorking(ServerLevel level) {
+		SeedCityConfig cfg = cfg();
+		if (cfg.unlimitedMaterials || deficit().isEmpty()) {
+			return;
+		}
+		int warehouses = 0;
+		for (Slot s : slots.values()) {
+			if (s.status == SlotStatus.BUILT && s.cell != null && CellLibrary.get(s.cell).map(c -> c.definition().kind() == CellKind.STORAGE).orElse(false)) {
+				warehouses++;
+			}
+		}
+		int desired = Math.min(cfg.maxCollectors, 1 + warehouses);
+		if (collectors(level).size() >= desired) {
+			return;
+		}
+		Optional<BlockPos> spot = Terrain.standable(level, seedPos, 6, 24, this::inCity);
+		if (spot.isEmpty()) {
+			SeedCity.LOGGER.info("City {}: short of {} but no ground near the Core for a Collector to stand on", seedPos.toShortString(), deficit().get().name);
+			return;
+		}
+		CollectorEntity c = SeedCityEntities.COLLECTOR.spawn(level, spot.get(), EntitySpawnReason.MOB_SUMMONED);
+		if (c != null) {
+			c.setCity(seedPos);
+			SeedCity.LOGGER.info("City {}: Collector sent out from {}", seedPos.toShortString(), spot.get().toShortString());
+		}
+	}
+
+	// ---- L3: the city's dreams (doc 14) ---------------------------------------------------
+
+	public boolean labels() {
+		return labels;
+	}
+
+	public void setLabels(ServerLevel level, boolean on) {
+		labels = on;
+		if (on) {
+			CellLabels.update(level, this);
+		} else {
+			CellLabels.remove(level, this);
+		}
+	}
+
+	public boolean dreaming() {
+		return dreamed && (executor != null || plan != null);
+	}
+
+	public int dreamCount() {
+		return dreamCount;
+	}
+
+	/**
+	 * The hardware a dream may be written over: actuator inputs, sensor outputs, vault count, the
+	 * ALU. With {@code ambitious}, one more of each than exists: an actuator and a sensor the
+	 * library could build next, one more vault, the ALU; a dream written over those is a plan the
+	 * builders then grow toward.
+	 */
+	private net.tabor.seedcity.card.Dreamer.Hardware hardware(boolean ambitious) {
+		List<String> actuators = new ArrayList<>();
+		List<String> sensors = new ArrayList<>();
+		Map<String, Integer> counts = new HashMap<>();
+		for (Slot s : slots.values()) {
+			if (s.status != SlotStatus.BUILT || s.cell == null) {
+				continue;
+			}
+			Optional<Cell> cell = CellLibrary.get(s.cell);
+			if (cell.isEmpty()) {
+				continue;
+			}
+			CellDefinition def = cell.get().definition();
+			counts.merge(s.cell.getPath(), 1, Integer::sum);
+			if (def.kind() == CellKind.ACTUATOR) {
+				for (Port p : def.inputs()) {
+					actuators.add(s.cell.getPath() + "." + s.ordinal + "." + p.name());
+				}
+			} else if (def.kind() == CellKind.SENSOR) {
+				for (Port p : def.outputs()) {
+					sensors.add(s.cell.getPath() + "." + s.ordinal + "." + p.name());
+				}
+			}
+		}
+		int registers = builtOfType("register_block").size();
+		boolean alu = !builtOfType("alu_sub").isEmpty() && !builtOfType("alu_not").isEmpty() && !builtOfType("alu_or").isEmpty();
+		if (ambitious) {
+			for (Cell c : CellLibrary.all()) {
+				CellDefinition def = c.definition();
+				boolean growable = false;
+				for (String d : List.of("core", "residential", "forge", "plaza", "ram", "storage")) {
+					growable |= def.weight(d) > 0;
+				}
+				if (!growable) {
+					continue;
+				}
+				int next = counts.getOrDefault(c.id().getPath(), 0) + 1;
+				if (def.kind() == CellKind.ACTUATOR && !def.inputs().isEmpty()) {
+					actuators.add(c.id().getPath() + "." + next + "." + def.inputs().getFirst().name());
+				} else if (def.kind() == CellKind.SENSOR && !def.outputs().isEmpty()) {
+					sensors.add(c.id().getPath() + "." + next + "." + def.outputs().getFirst().name());
+				}
+			}
+			registers++;
+			alu = true;
+		}
+		return new net.tabor.seedcity.card.Dreamer.Hardware(actuators, sensors, registers, alu);
+	}
+
+	/**
+	 * Composes a card from the fragment library and puts it in the reader as a real book, authored
+	 * by the city. Over the hardware that exists it runs at once; over more than exists it is a
+	 * plan the builders grow toward while the previous dream keeps running. {@code ambitious}
+	 * asks for the plan first. A previous dream goes to a warehouse chest. True when a card went in.
+	 */
+	public boolean dream(ServerLevel level, boolean ambitious) {
+		this.level = level;
+		lastDream = level.getGameTime();
+		if (cardText != null && !dreamed) {
+			return false;   // never over a player's card
+		}
+		boolean[] order = ambitious ? new boolean[] {true, false} : new boolean[] {false, true};
+		for (boolean bigger : order) {
+			net.tabor.seedcity.card.Dreamer.Hardware hw = hardware(bigger);
+			Random rng = new Random(mix(citySeed ^ (0xD2EA0000L + dreamCount) ^ (bigger ? 0xA5B1710L : 0)));
+			for (int attempt = 0; attempt < 8; attempt++) {
+				Optional<net.tabor.seedcity.card.Dreamer.Dream> d = net.tabor.seedcity.card.Dreamer.compose(
+						net.tabor.seedcity.card.FragmentLibrary.all(), hw, rng, dreamCount + 1);
+				if (d.isEmpty()) {
+					break;
+				}
+				try {
+					net.tabor.seedcity.card.Program program = net.tabor.seedcity.card.CardParser.parse(d.get().text());
+					Executor e = Executor.resolve(program, this);
+					if (!bigger && !e.live()) {
+						continue;   // a dream over what exists must run now
+					}
+					if (bigger && e.live() && !ambitious) {
+						continue;   // asked for something to build toward; this asks for nothing
+					}
+				} catch (net.tabor.seedcity.card.CardError ex) {
+					SeedCity.LOGGER.warn("City {}: dream did not parse ({}); fragments {}", seedPos.toShortString(), ex, d.get().fragments());
+					continue;
+				}
+				ItemStack previous = dreamed ? cardItem : ItemStack.EMPTY;
+				CardResult result = insertCard(level, d.get().text(), dreamBook(d.get()));
+				if (!result.accepted()) {
+					continue;
+				}
+				dreamed = true;
+				dreamCount++;
+				if (!previous.isEmpty()) {
+					stash(level, previous);
+				}
+				SeedCity.LOGGER.info("City {}: dreaming {} ({}){}", seedPos.toShortString(), d.get().title(), String.join(" + ", d.get().fragments()),
+						plan != null ? ", a plan: needs " + String.join(", ", plan.needs()) : "");
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private ItemStack dreamBook(net.tabor.seedcity.card.Dreamer.Dream d) {
+		ItemStack book = new ItemStack(net.minecraft.world.item.Items.WRITTEN_BOOK);
+		List<net.minecraft.server.network.Filterable<net.minecraft.network.chat.Component>> pages = new ArrayList<>();
+		String[] lines = d.text().split("\n");
+		StringBuilder page = new StringBuilder();
+		int n = 0;
+		for (String line : lines) {
+			page.append(line).append('\n');
+			if (++n == 12) {
+				pages.add(net.minecraft.server.network.Filterable.passThrough(net.minecraft.network.chat.Component.literal(page.toString())));
+				page.setLength(0);
+				n = 0;
+			}
+		}
+		if (!page.isEmpty()) {
+			pages.add(net.minecraft.server.network.Filterable.passThrough(net.minecraft.network.chat.Component.literal(page.toString())));
+		}
+		book.set(net.minecraft.core.component.DataComponents.WRITTEN_BOOK_CONTENT,
+				new net.minecraft.world.item.component.WrittenBookContent(net.minecraft.server.network.Filterable.passThrough(d.title()), "the city", 0, pages, true));
+		return book;
+	}
+
+	/** Cards the city has run end up in a warehouse (docs/city-as-computer.md): the first free slot of a container in a storage cell. */
+	private void stash(ServerLevel level, ItemStack item) {
+		for (Slot s : slots.values()) {
+			if (s.status != SlotStatus.BUILT || s.cell == null) {
+				continue;
+			}
+			Optional<Cell> cell = CellLibrary.get(s.cell);
+			if (cell.isEmpty() || cell.get().definition().kind() != CellKind.STORAGE) {
+				continue;
+			}
+			Optional<Placement> p = placement(s);
+			if (p.isEmpty()) {
+				continue;
+			}
+			for (BlockPos pos : BlockPos.betweenClosed(p.get().footprint().minX(), p.get().footprint().minY(), p.get().footprint().minZ(),
+					p.get().footprint().maxX(), p.get().footprint().maxY(), p.get().footprint().maxZ())) {
+				if (level.getBlockEntity(pos) instanceof net.minecraft.world.Container container) {
+					for (int i = 0; i < container.getContainerSize(); i++) {
+						if (container.getItem(i).isEmpty()) {
+							container.setItem(i, item);
+							container.setChanged();
+							return;
+						}
+					}
+				}
+			}
+		}
+		net.minecraft.world.Containers.dropItemStack(level, seedPos.getX() + 0.5, seedPos.getY() + 1.5, seedPos.getZ() + 0.5, item);
 	}
 
 	/** A player who restores a Fault Cell's missing block gets the district back: verify, then the Warden comes. */
@@ -1398,11 +2003,12 @@ public final class CityState {
 	}
 
 	private AABB bounds() {
-		return new AABB(seedPos).inflate(cfg().maxRadiusSlots * SLOT + 24.0);
+		return new AABB(seedPos).inflate(cfg().maxRadiusSlots * SLOT + cfg().collectorRange + 24.0);
 	}
 
 	public void spawnBuilder(ServerLevel level) {
-		BuilderEntity b = SeedCityEntities.BUILDER.spawn(level, seedPos.above(2), EntitySpawnReason.MOB_SUMMONED);
+		// above the Core roof: a mob that spawns overlapping a block never finds a path out
+		BuilderEntity b = SeedCityEntities.BUILDER.spawn(level, seedPos.above(5), EntitySpawnReason.MOB_SUMMONED);
 		if (b != null) {
 			b.setCity(seedPos);
 		}
@@ -1484,7 +2090,8 @@ public final class CityState {
 				+ " built=" + built + " faults=" + fault + " verifying=" + verify + " building=" + building + " planned=" + planned
 				+ " pending=" + pending + " blocked=" + blocked
 				+ " stock=" + redstone + "r/" + stone + "s/" + wood + "w"
-				+ " program=[" + programSummary() + "]";
+				+ (dreamCount > 0 ? " dreams=" + dreamCount : "")
+				+ " program=[" + (dreamed ? "dream: " : "") + programSummary() + "]";
 	}
 
 	public List<String> describeSlots() {
@@ -1492,7 +2099,7 @@ public final class CityState {
 		list.sort(Comparator.comparingInt((Slot s) -> s.key.chebyshev()).thenComparingInt(s -> s.key.x()).thenComparingInt(s -> s.key.z()));
 		List<String> out = new ArrayList<>();
 		for (Slot s : list) {
-			out.add(s + " {" + district(s.key) + "}" + (s.note.isEmpty() ? "" : " [" + s.note + "]"));
+			out.add(s + " {" + district(s.key) + "}" + (s.y != null ? " y=" + s.y : "") + (s.note.isEmpty() ? "" : " [" + s.note + "]"));
 		}
 		return out;
 	}

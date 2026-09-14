@@ -1,7 +1,7 @@
 {
   "id": "seedcity:register_block",
   "kind": "logic",
-  "size": [7, 5, 7],
+  "size": [7, 6, 7],
   "ports": [
     { "name": "in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 4 },
     { "name": "clk", "dir": "in", "face": "west", "pos": [0, 1, 3], "bits": 1 },
@@ -9,6 +9,6 @@
   ],
   "truth": "register",
   "weights": { "core": 1, "residential": 0, "forge": 0, "plaza": 0, "ram": 8, "storage": 0 },
-  "cost": { "redstone": 24, "stone": 80, "wood": 0 },
+  "cost": { "redstone": 32, "stone": 110, "wood": 0 },
   "setpiece": true
 }

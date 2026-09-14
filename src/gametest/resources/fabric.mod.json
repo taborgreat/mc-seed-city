@@ -10,7 +10,11 @@
 			"net.tabor.seedcity.gametest.CityGrowthTests",
 			"net.tabor.seedcity.gametest.GuardianTests",
 			"net.tabor.seedcity.gametest.CardTests",
-			"net.tabor.seedcity.gametest.ComputerTests"
+			"net.tabor.seedcity.gametest.ComputerTests",
+			"net.tabor.seedcity.gametest.RedstoneRatTests",
+			"net.tabor.seedcity.gametest.TerrainTests",
+			"net.tabor.seedcity.gametest.CollectorTests",
+			"net.tabor.seedcity.gametest.DreamTests"
 		]
 	},
 	"depends": {

@@ -160,18 +160,22 @@ public final class Cells {
 				.cost(0, 40, 0);
 	}
 
-	/** A paved square with four lantern posts. No ports: the grammar's fallback that always fits. */
+	/** A paved square with a fountain in the middle and four lantern posts. No ports: the grammar's fallback that always fits. */
 	static CellBuilder decorPlaza() {
 		CellBuilder b = shell("decor_plaza", 5);
+		b.fill(0, 0, 0, 6, 0, 6, "minecraft:polished_andesite");
 		for (int[] c : new int[][] {{1, 1}, {5, 1}, {1, 5}, {5, 5}}) {
 			b.set(c[0], 1, c[1], "minecraft:oak_fence").set(c[0], 2, c[1], "minecraft:oak_fence");
 			b.set(c[0], 3, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
 		}
-		b.set(3, 0, 3, "minecraft:chiseled_stone_bricks");
-		b.fill(2, 0, 2, 4, 0, 2, BRICK).fill(2, 0, 4, 4, 0, 4, BRICK).set(2, 0, 3, BRICK).set(4, 0, 3, BRICK);
+		// the fountain: a brick basin around one block of water, a column rising from it
+		b.fill(2, 0, 2, 4, 0, 4, BRICK);
+		b.set(2, 1, 3, BRICK).set(4, 1, 3, BRICK).set(3, 1, 2, BRICK).set(3, 1, 4, BRICK);
+		b.set(3, 1, 3, BlockSpec.of("minecraft:water", "level", "0"));
+		b.set(3, 2, 3, "minecraft:stone_brick_wall").set(3, 3, 3, BlockSpec.of("minecraft:lantern", "hanging", "false"));
 		return b.kind("decor").truth("none")
 				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 2).weight("ram", 1).weight("storage", 1)
-				.cost(0, 30, 8);
+				.cost(0, 40, 8);
 	}
 
 	/** A daylight detector under open sky read by a comparator: the city's slow breath, 4-bit out. */
@@ -188,36 +192,35 @@ public final class Cells {
 				.cost(4, 40, 0);
 	}
 
-	/** A 1-bit street: repeater in, dust, repeater out. Carries the clock across the city. */
+	/** A 1-bit street: repeater in, dust under glass down the middle, repeater out. Carries the clock across the city. */
 	static CellBuilder wireSegment() {
-		CellBuilder b = shell("wire_segment", 4);
+		CellBuilder b = street("wire_segment");
 		b.repeater(3, 1, 0, SOUTH, 1);
 		for (int z = 1; z <= 5; z++) {
 			b.dust(3, 1, z);
 		}
 		b.repeater(3, 1, 6, SOUTH, 1);
-		b.fill(2, 1, 0, 2, 1, 6, BRICK).fill(4, 1, 0, 4, 1, 6, BRICK);
-		b.fill(2, 2, 0, 4, 2, 6, GLASS);
 		return b.kind("logic").truth("passthrough")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
 				.fault(3, 1, 3)
 				.weight("core", 3).weight("residential", 4).weight("forge", 4).weight("plaza", 3).weight("ram", 3).weight("storage", 3)
-				.cost(6, 50, 0);
+				.cost(6, 50, 4);
 	}
 
-	/** A 1-bit fan-out: one input from the north, outputs south, east and west. */
+	/** A crossroads: one input from the north fans out south, east and west under glass; lantern posts on the corners. */
 	static CellBuilder junction() {
-		CellBuilder b = shell("junction", 4);
+		CellBuilder b = street("junction");
+		b.fill(0, 0, 3, 6, 0, 3, BRICK);
+		b.fill(0, 1, 3, 6, 1, 3, "minecraft:air");
+		b.fill(0, 2, 3, 6, 2, 3, GLASS);
+		b.set(3, 0, 3, "minecraft:chiseled_stone_bricks");
 		b.repeater(3, 1, 0, SOUTH, 1);
 		b.dust(3, 1, 1).dust(3, 1, 2).dust(3, 1, 3).dust(3, 1, 4).dust(3, 1, 5);
 		b.dust(2, 1, 3).dust(1, 1, 3).dust(4, 1, 3).dust(5, 1, 3);
 		b.repeater(0, 1, 3, WEST, 1);
 		b.repeater(6, 1, 3, EAST, 1);
 		b.repeater(3, 1, 6, SOUTH, 1);
-		for (int[] c : new int[][] {{1, 1}, {5, 1}, {1, 5}, {5, 5}}) {
-			b.fill(c[0], 1, c[1], c[0], 3, c[1], BRICK);
-		}
 		return b.kind("logic").truth("passthrough")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.port("out_s", "out", SOUTH, 3, 1, 6, 1)
@@ -225,7 +228,27 @@ public final class Cells {
 				.port("out_e", "out", EAST, 6, 1, 3, 1)
 				.fault(3, 1, 3)
 				.weight("core", 3).weight("residential", 2).weight("forge", 3).weight("plaza", 3).weight("ram", 2).weight("storage", 2)
-				.cost(10, 50, 0);
+				.cost(10, 50, 4);
+	}
+
+	static final String SLAB = "minecraft:stone_brick_slab";
+
+	/**
+	 * A street: paving slabs across the whole cell, a glass-covered groove down the middle for
+	 * the wire, lantern posts on the corners. The signal path itself is left to the caller.
+	 */
+	private static CellBuilder street(String id) {
+		CellBuilder b = shell(id, 4);
+		b.fill(0, 0, 0, 6, 0, 6, "minecraft:polished_andesite");
+		b.fill(3, 0, 0, 3, 0, 6, BRICK);
+		b.fill(0, 1, 0, 6, 1, 6, SLAB);
+		b.fill(3, 1, 0, 3, 1, 6, "minecraft:air");
+		b.fill(3, 2, 0, 3, 2, 6, GLASS);
+		for (int[] c : new int[][] {{0, 0}, {6, 0}, {0, 6}, {6, 6}}) {
+			b.set(c[0], 1, c[1], "minecraft:oak_fence").set(c[0], 2, c[1], "minecraft:oak_fence");
+			b.set(c[0], 3, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		}
+		return b;
 	}
 
 	private static CellBuilder shell(String id, int height) {
@@ -234,20 +257,18 @@ public final class Cells {
 		return b;
 	}
 
-	/** Seven comparators in a row: a 4-bit street. Strength in equals strength out. */
+	/** A 4-bit street: seven comparators in a row under glass. Strength in equals strength out. */
 	static CellBuilder busSegment() {
-		CellBuilder b = shell("bus_segment", 4);
+		CellBuilder b = street("bus_segment");
 		for (int z = 0; z <= 6; z++) {
 			b.comparator(3, 1, z, SOUTH, false);
 		}
-		b.fill(2, 1, 0, 2, 1, 6, BRICK).fill(4, 1, 0, 4, 1, 6, BRICK);
-		b.fill(2, 2, 0, 4, 2, 6, GLASS);
 		return b.kind("logic").truth("passthrough")
 				.port("in", "in", NORTH, 3, 1, 0, 4)
 				.port("out", "out", SOUTH, 3, 1, 6, 4)
 				.fault(3, 1, 3)
 				.weight("core", 2).weight("residential", 1).weight("forge", 6).weight("plaza", 1).weight("ram", 5).weight("storage", 1)
-				.cost(14, 60, 0);
+				.cost(14, 60, 4);
 	}
 
 	/** Repeater into a block, torch on its far side, dust to the output. Lamp shows the inverted state. */
@@ -269,11 +290,17 @@ public final class Cells {
 	}
 
 	/**
+	 * The register vault (design doc 5.1: "a vault-like building with lit indicator windows").
 	 * Four comparators and four blocks in a ring hold a strength losslessly. C4 (west edge) is in
 	 * subtract mode with clk on its side: clk high breaks the loop. The input comparator Cin is in
 	 * subtract mode with NOT clk on its side: clk high lets the new value in. Result: a latch that
-	 * follows in while clk is high and holds while clk is low. Lamps above the ring blocks light
-	 * whenever the held value is non-zero: the vault's indicator windows.
+	 * follows in while clk is high and holds while clk is low.
+	 *
+	 * <p>Two readouts. Inside, lamps above the ring blocks light whenever the value is non-zero.
+	 * Outside, a gauge: a comparator reads the ring into a block, and a dust line runs from it
+	 * along the top of the ground-floor wall, losing one per block; lamps set in the wall under
+	 * the line light at value 1, above 4, above 7 and above 10, so the vault reads its own value
+	 * from the street.
 	 *
 	 * <p>Timing, in redstone ticks after a clk edge: C4 reopens at 3, Cin closes at 4 (make before
 	 * break, so the ring is never undriven while holding). A change on in reaches the ring at 3, so
@@ -281,12 +308,14 @@ public final class Cells {
 	 * register truth model never changes both in one step; card execution honours the same rule.
 	 */
 	static CellBuilder registerBlock() {
-		CellBuilder b = shell("register_block", 5);
-		// perimeter walls, windows, roof
-		b.walls(0, 1, 0, 6, 1, 6, BRICK);
-		b.walls(0, 2, 0, 6, 2, 6, GLASS);
-		b.walls(0, 3, 0, 6, 3, 6, BRICK);
-		b.fill(0, 4, 0, 6, 4, 6, BRICK);
+		CellBuilder b = shell("register_block", 6);
+		// the vault: brick walls with a window band, a brick roof and a lantern
+		b.walls(0, 1, 0, 6, 2, 6, BRICK);
+		b.walls(0, 3, 0, 6, 3, 6, GLASS);
+		b.walls(0, 4, 0, 6, 4, 6, BRICK);
+		b.fill(0, 5, 0, 6, 5, 6, BRICK);
+		b.set(3, 5, 3, "minecraft:chiseled_stone_bricks");
+		b.set(3, 4, 3, BlockSpec.of("minecraft:lantern", "hanging", "true"));
 		// input path: port comparator, a delay comparator, then the gated input comparator
 		b.comparator(3, 1, 0, SOUTH, false);
 		b.comparator(3, 1, 1, SOUTH, false);   // D: one tick of delay so in cannot outrun the gate
@@ -315,21 +344,32 @@ public final class Cells {
 		b.comparator(3, 1, 6, SOUTH, false);
 		// indicator windows above the ring blocks
 		b.lamp(3, 2, 3).lamp(5, 2, 3).lamp(5, 2, 5).lamp(3, 2, 5);
+		// the gauge: a comparator reads B2 north into P; dust from P runs along the wall top
+		b.comparator(5, 1, 2, NORTH, false);
+		b.set(5, 1, 1, BRICK);                 // P = the held value
+		b.dust(5, 2, 1);                       // d0
+		b.dust(5, 2, 0).dust(6, 2, 0).dust(6, 2, 1).dust(6, 2, 2).dust(6, 2, 3);   // d1..d5
+		b.dust(6, 2, 4).dust(6, 2, 5).dust(6, 2, 6).dust(5, 2, 6).dust(4, 2, 6);   // d6..d10
+		b.lamp(5, 1, 0).lamp(6, 1, 2).lamp(6, 1, 5).lamp(4, 1, 6);                 // lit at 1, >4, >7, >10
 		return b.kind("logic").truth("register")
 				.port("in", "in", NORTH, 3, 1, 0, 4)
 				.port("clk", "in", WEST, 0, 1, 3, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 4)
 				.weight("core", 1).weight("residential", 0).weight("forge", 0).weight("plaza", 0).weight("ram", 8).weight("storage", 0)
-				.cost(24, 80, 0);
+				.cost(32, 110, 0);
 	}
 
 	/**
-	 * Torch-repeater loop: torch on block B feeds four repeaters at delay 4 that lead back into B.
-	 * Period 2 x (16 + 1) redstone ticks = 68 game ticks. The output taps the loop dust. A lamp
-	 * above B beats with it; the spire is the landmark.
+	 * The Clock Tower (design doc 5.1: "a tall pulsing spire; the city's heartbeat"). In the base
+	 * chamber a torch-repeater loop: the torch on block B feeds four repeaters at delay 4 that lead
+	 * back into B, period 2 x (16 + 1) redstone ticks = 68 game ticks; the output taps the loop
+	 * dust. Above B a torch ladder climbs the spire: torch on B, block on the torch, torch on the
+	 * block, and so on, each level inverting the one below, with lamps set into the shaft beside
+	 * every block. The beat runs up the tower as alternating bands of light, every other band in
+	 * step with the clock. Torches toggle every 34 ticks, well under burn-out.
 	 */
 	static CellBuilder clockTower() {
-		CellBuilder b = shell("clock_tower", 9);
+		CellBuilder b = shell("clock_tower", 11);
 		b.set(3, 1, 2, BRICK);                 // B
 		b.wallTorch(4, 1, 2, EAST);            // T hangs on B
 		b.repeater(4, 1, 3, SOUTH, 4);         // R0 reads T
@@ -337,56 +377,94 @@ public final class Cells {
 		b.dust(4, 1, 5).dust(3, 1, 5);         // the turn
 		b.repeater(3, 1, 4, NORTH, 4);         // R3 reads dust
 		b.repeater(3, 1, 3, NORTH, 4);         // R4 -> B
-		b.repeater(3, 1, 6, SOUTH, 1);         // out port taps the dust
-		b.lamp(3, 2, 2);                       // beats with B
-		// spire: glass ring around the lamp, brick shaft above, lamp cap
-		b.walls(2, 2, 1, 4, 2, 3, GLASS);
-		b.walls(2, 3, 1, 4, 7, 3, BRICK);
-		b.fill(2, 8, 1, 4, 8, 3, BRICK);
-		b.set(3, 8, 2, "minecraft:glowstone");
+		b.lamp(2, 1, 2).lamp(3, 1, 1);         // beat with B, at eye level in the chamber
+		// the chamber: walls with a window band, a brick roof the shaft rises through
+		b.walls(0, 1, 0, 6, 1, 6, BRICK);
+		b.walls(0, 2, 0, 6, 2, 6, GLASS);
+		b.walls(0, 3, 0, 6, 3, 6, BRICK);
+		b.fill(0, 4, 0, 6, 4, 6, BRICK);
+		b.set(3, 1, 0, "minecraft:air").set(3, 2, 0, "minecraft:air");   // a doorway on the north face
+		b.repeater(3, 1, 6, SOUTH, 1);         // out port taps the dust, set in the south wall
+		// the spire: a 3x3 shaft around the torch ladder
+		for (int y = 2; y <= 9; y++) {
+			b.walls(2, y, 1, 4, y, 3, BRICK);
+			if (y % 2 == 0) {
+				b.torch(3, y, 2);                                    // T1, T2, ... on the block below
+			} else {
+				b.set(3, y, 2, BRICK);                               // X1, X2, ... powered by the torch below
+				b.lamp(2, y, 2).lamp(4, y, 2).lamp(3, y, 1).lamp(3, y, 3);
+			}
+		}
+		b.fill(2, 10, 1, 4, 10, 3, "minecraft:stone_brick_slab");
+		b.set(3, 10, 2, "minecraft:glowstone");
 		// Zero weights: the city has one clock, placed by the planner next to the core.
 		return b.kind("logic").truth("clock")
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
 				.weight("core", 0).weight("residential", 0).weight("forge", 0).weight("plaza", 0)
-				.cost(20, 120, 0);
+				.cost(36, 220, 0);
 	}
 
 	/**
-	 * Input dust climbs onto three blocks; dust on top powers the blocks, the blocks power the
-	 * three sticky pistons south of them, and the pistons lift a plank deck one block.
+	 * The drawbridge (design doc 5.1: "a bridge that rises and falls with the program"). A water
+	 * channel crosses the cell between two banks; a plank deck with a slime spine spans it. The
+	 * input runs under the north bank into a pier in the channel; the pier powers a sticky piston
+	 * under the deck, which lifts the whole deck one block, and drops it when the signal goes.
+	 * Lanterns on the bank corners. The channel is walled at both ends so it never floods a
+	 * neighbour.
 	 */
 	static CellBuilder drawbridge() {
 		CellBuilder b = shell("drawbridge", 5);
+		// banks: north z 0..2, south z 6, two high
+		b.fill(0, 1, 0, 6, 2, 2, BRICK);
+		b.fill(0, 1, 6, 6, 2, 6, BRICK);
+		// the channel z 3..5 at y 1, walled at both ends, water throughout except the pier and the piston
+		b.fill(0, 1, 3, 0, 1, 5, BRICK).fill(6, 1, 3, 6, 1, 5, BRICK);
+		b.fill(1, 1, 3, 5, 1, 5, BlockSpec.of("minecraft:water", "level", "0"));
+		b.set(3, 1, 3, "minecraft:chiseled_stone_bricks");   // the pier, powered by the input
+		b.stickyPiston(3, 1, 4, UP);
+		// the deck: planks either side of a slime spine, so one piston moves all nine blocks
+		b.fill(2, 2, 3, 4, 2, 3, PLANKS).fill(2, 2, 5, 4, 2, 5, PLANKS);
+		b.fill(2, 2, 4, 4, 2, 4, "minecraft:slime_block");
+		// the input, under the north bank: port repeater, dust, repeater into the pier
 		b.repeater(3, 1, 0, SOUTH, 1);
-		b.dust(3, 1, 1).dust(3, 1, 2);
-		b.fill(2, 1, 3, 4, 1, 3, BRICK);
-		b.dust(2, 2, 3).dust(3, 2, 3).dust(4, 2, 3);
-		for (int x = 2; x <= 4; x++) {
-			b.stickyPiston(x, 1, 4, UP);
-			b.set(x, 2, 4, PLANKS);
+		b.dust(3, 1, 1);
+		b.repeater(3, 1, 2, SOUTH, 1);
+		// lanterns on the bank corners
+		for (int[] c : new int[][] {{0, 0}, {6, 0}, {0, 6}, {6, 6}}) {
+			b.set(c[0], 3, c[1], "minecraft:oak_fence");
+			b.set(c[0], 4, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
 		}
-		// abutments either side of the deck
-		b.fill(1, 1, 4, 1, 2, 4, BRICK).fill(5, 1, 4, 5, 2, 4, BRICK);
 		return b.kind("actuator").truth("actuator")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 4).weight("ram", 0).weight("storage", 1)
-				.cost(8, 60, 12);
+				.cost(10, 90, 24);
 	}
 
-	/** A warehouse: brick walls, plank roof, barrels along the back wall, a doorway on the north face. */
+	/**
+	 * A warehouse (design doc 5.1: "a warehouse the city draws from"): brick walls, a plank roof,
+	 * barrels along the back wall, a doorway on the north face, and a crane on the roof with a
+	 * barrel hanging from its chain. Collectors unload here; Builders fetch here.
+	 */
 	static CellBuilder storageCell() {
-		CellBuilder b = shell("storage_cell", 5);
+		CellBuilder b = shell("storage_cell", 8);
 		b.walls(0, 1, 0, 6, 3, 6, BRICK);
 		b.fill(0, 4, 0, 6, 4, 6, PLANKS);
 		b.set(3, 1, 0, "minecraft:air").set(3, 2, 0, "minecraft:air");
-		b.set(2, 2, 0, GLASS).set(4, 2, 0, GLASS);
+		b.set(2, 2, 0, GLASS).set(4, 2, 0, GLASS).set(0, 2, 3, GLASS).set(6, 2, 3, GLASS);
 		for (int x : new int[] {1, 2, 4, 5}) {
 			b.facing(x, 1, 5, "minecraft:barrel", UP);
 		}
 		b.facing(1, 1, 4, "minecraft:barrel", UP).facing(5, 1, 4, "minecraft:barrel", UP);
+		b.facing(1, 2, 5, "minecraft:barrel", UP).facing(5, 2, 5, "minecraft:barrel", UP);
 		b.set(3, 3, 3, BlockSpec.of("minecraft:lantern", "hanging", "true"));
+		// the crane: a log mast on the roof corner, a beam out over the yard, a chain and a barrel
+		b.fill(5, 5, 5, 5, 7, 5, BlockSpec.of("minecraft:oak_log", "axis", "y"));
+		b.set(4, 7, 5, BlockSpec.of("minecraft:oak_log", "axis", "x")).set(3, 7, 5, BlockSpec.of("minecraft:oak_log", "axis", "x"));
+		b.set(2, 7, 5, "minecraft:oak_fence");
+		b.set(2, 6, 5, BlockSpec.of("minecraft:chain", "axis", "y"));
+		b.facing(2, 5, 5, "minecraft:barrel", UP);
 		return b.kind("storage").truth("none")
 				.weight("core", 2).weight("residential", 1).weight("forge", 1).weight("plaza", 1).weight("ram", 0).weight("storage", 8)
-				.cost(0, 90, 40);
+				.cost(0, 100, 60);
 	}
 }

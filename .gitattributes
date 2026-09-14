@@ -10,3 +10,8 @@ gradlew text eol=lf
 *.png binary
 *.jar binary
 *.pdf binary
+
+# Generated mob geometry (tools/*.py writes these); collapse in review
+src/client/java/net/tabor/seedcity/client/*Mesh.java linguist-generated
+art/**/*.geometry.json linguist-generated
+art/**/*.bbmodel linguist-generated

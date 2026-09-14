@@ -2,6 +2,8 @@ package net.tabor.seedcity.entity;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
@@ -61,6 +63,26 @@ public abstract class FlyingCityMob extends PathfinderMob {
 
 	@Override
 	protected void checkFallDamage(double ya, boolean onGround, BlockState onState, BlockPos pos) {
+	}
+
+	/** A cell grows around the mob that builds it; being inside a wall for a moment must not hurt. */
+	@Override
+	public boolean isInvulnerableTo(ServerLevel level, DamageSource source) {
+		return source.is(DamageTypes.IN_WALL) || super.isInvulnerableTo(level, source);
+	}
+
+	/**
+	 * The hover spot for working on {@code pos}: two blocks above it, raised until both the feet
+	 * and the head block are clear, but never above {@code top}. Keeps a tall mob out of the
+	 * roof it placed a moment ago.
+	 */
+	protected Vec3 hoverAbove(BlockPos pos, int top) {
+		int y = pos.getY() + 2;
+		while (y < top && (level().getBlockState(new BlockPos(pos.getX(), y, pos.getZ())).canOcclude()
+				|| level().getBlockState(new BlockPos(pos.getX(), y + 1, pos.getZ())).canOcclude())) {
+			y++;
+		}
+		return Vec3.atCenterOf(new BlockPos(pos.getX(), y, pos.getZ()));
 	}
 
 	public BlockPos cityPos() {

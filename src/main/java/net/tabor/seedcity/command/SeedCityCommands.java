@@ -95,6 +95,9 @@ public final class SeedCityCommands {
 								.suggests((c, b) -> SharedSuggestionProvider.suggest(net.tabor.seedcity.card.CardLibrary.names(), b))
 								.executes(c -> insert(c.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(c, "name")))))
 				.then(Commands.literal("eject").executes(c -> eject(c.getSource())))
+				.then(Commands.literal("dream").executes(c -> dream(c.getSource())))
+				.then(Commands.literal("fit").executes(c -> fit(c.getSource())))
+				.then(Commands.literal("labels").executes(c -> labels(c.getSource())))
 				.then(Commands.literal("reader").executes(c -> reader(c.getSource())))
 				.then(Commands.literal("blueprint")
 						.then(Commands.argument("cell", IdentifierArgument.id())
@@ -271,6 +274,10 @@ public final class SeedCityCommands {
 		for (net.tabor.seedcity.entity.CourierEntity k : c.couriers(level)) {
 			source.sendSuccess(() -> Component.literal("  " + k.status() + " at " + k.blockPosition().toShortString()), false);
 		}
+		for (net.tabor.seedcity.entity.CollectorEntity k : c.collectors(level)) {
+			source.sendSuccess(() -> Component.literal("  " + k.status() + " at " + k.blockPosition().toShortString()), false);
+		}
+		c.deficit().ifPresent(k -> source.sendSuccess(() -> Component.literal("  short of " + k.name + "; collectors are out for it"), false));
 		if (!c.lastBlueprintResult().isEmpty()) {
 			source.sendSuccess(() -> Component.literal("  last blueprint: " + c.lastBlueprintResult()), false);
 		}
@@ -387,6 +394,56 @@ public final class SeedCityCommands {
 		}
 		source.sendFailure(Component.literal(r.message()));
 		return 0;
+	}
+
+	/** Dev shortcut: make the nearest city dream a card now, as if the slot had been empty for the configured time. */
+	private static int dream(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		Optional<CityState> city = CityManager.get(level).nearest(BlockPos.containing(source.getPosition()));
+		if (city.isEmpty()) {
+			source.sendFailure(Component.literal("No city in this dimension."));
+			return 0;
+		}
+		boolean ok = city.get().dream(level, false);
+		CityManager.get(level).touch();
+		if (!ok) {
+			source.sendFailure(Component.literal("The city could not dream: " + (city.get().programLive() && !city.get().dreaming() ? "a player card is in the reader" : "no fragment fits, even as a plan") + ". " + city.get().programSummary()));
+			return 0;
+		}
+		source.sendSuccess(() -> Component.literal("The city dreams. " + city.get().programSummary()), true);
+		return 1;
+	}
+
+	/** How the slot under the caller sits on the land: its level, or why it cannot be built. */
+	private static int fit(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		BlockPos at = BlockPos.containing(source.getPosition());
+		Optional<CityState> city = CityManager.get(level).nearest(at);
+		if (city.isEmpty()) {
+			source.sendFailure(Component.literal("No city in this dimension."));
+			return 0;
+		}
+		CityState c = city.get();
+		BlockPos flat = c.coreOrigin();
+		CityState.SlotKey k = new CityState.SlotKey(Math.floorDiv(at.getX() - flat.getX(), CityState.SLOT), Math.floorDiv(at.getZ() - flat.getZ(), CityState.SLOT));
+		CityState.Fit fit = c.fitSlot(level, k);
+		source.sendSuccess(() -> Component.literal("slot " + k + " {" + c.district(k) + "}: " + (fit.ok() ? "fits at y=" + fit.y() : fit.unloaded() ? "ground not loaded" : "unfit: " + fit.reason())
+				+ c.slot(k).map(s -> "; " + s).orElse("")), false);
+		return 1;
+	}
+
+	/** Toggles floating labels over every built cell: name as cards see it, district, clocked or not, port values. */
+	private static int labels(CommandSourceStack source) {
+		ServerLevel level = source.getLevel();
+		Optional<CityState> city = CityManager.get(level).nearest(BlockPos.containing(source.getPosition()));
+		if (city.isEmpty()) {
+			source.sendFailure(Component.literal("No city in this dimension."));
+			return 0;
+		}
+		boolean on = !city.get().labels();
+		city.get().setLabels(level, on);
+		source.sendSuccess(() -> Component.literal(on ? "Cell labels on: name.ordinal, district, clocked/quiet, port values. Run again to hide." : "Cell labels off."), false);
+		return 1;
 	}
 
 	private static int eject(CommandSourceStack source) {

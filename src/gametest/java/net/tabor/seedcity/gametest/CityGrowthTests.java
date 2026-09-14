@@ -28,6 +28,7 @@ public final class CityGrowthTests {
 
 	private static SeedCityConfig fastConfig() {
 		SeedCityConfig c = new SeedCityConfig();
+		c.dreamAtStart = false;
 		c.blocksPerSecond = 40;
 		c.maxBuilders = 3;
 		c.cellsPerBuilder = 2;
@@ -99,6 +100,7 @@ public final class CityGrowthTests {
 	@GameTest(structure = "seedcity:arena", maxTicks = 40)
 	public void planningIsDeterministic(GameTestHelper helper) {
 		SeedCityConfig cfg = new SeedCityConfig();
+		cfg.dreamAtStart = false;
 		List<String> a = CityState.previewPlan(0xC0FFEEL, 30, cfg);
 		List<String> b = CityState.previewPlan(0xC0FFEEL, 30, cfg);
 		List<String> other = CityState.previewPlan(0xBEEFL, 30, cfg);
