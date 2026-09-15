@@ -9,5 +9,6 @@
   "weights": { "core": 0, "residential": 1, "forge": 0, "plaza": 2, "ram": 1, "storage": 3 },
   "cost": { "redstone": 12, "stone": 120, "wood": 10 },
   "loot": "minecraft:chests/simple_dungeon",
+  "doors": ["north"],
   "setpiece": true
 }

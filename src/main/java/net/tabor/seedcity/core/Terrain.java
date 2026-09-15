@@ -39,7 +39,7 @@ public final class Terrain {
 
 	/** The three currencies of the ledger, and what in the world yields them. */
 	public enum Kind {
-		WOOD("wood", 4), STONE("stone", 2), REDSTONE("redstone", 8);
+		WOOD("wood", 4), STONE("stone", 6), REDSTONE("redstone", 8);   // a tower is 300 stone: fifty blocks quarried, not a hundred and fifty
 
 		public final String name;
 		/** Ledger units one mined block is worth. */
@@ -74,7 +74,12 @@ public final class Terrain {
 	}
 
 	/** The ground under a footprint: per-column top ground y, or the reason it will not do. */
-	public record Survey(int[] ground, int min, int max, int median, String reason) {
+	/** @param wet true when the surface surveyed is water in at least one column: only a bridge may stand here */
+	public record Survey(int[] ground, int min, int max, int median, String reason, boolean wet) {
+		public Survey(int[] ground, int min, int max, int median, String reason) {
+			this(ground, min, max, median, reason, false);
+		}
+
 		public boolean ok() {
 			return reason == null;
 		}
@@ -82,6 +87,57 @@ public final class Terrain {
 		public static Survey unfit(String reason) {
 			return new Survey(new int[0], 0, 0, 0, reason);
 		}
+	}
+
+	/**
+	 * Surveys a footprint that has water on it, for bridges: each column's top is the water surface
+	 * where there is water and the ground elsewhere, the spread must stay within the slope limit,
+	 * and at least one column must be water.
+	 */
+	public static Survey surveyWet(ServerLevel level, int x0, int z0, int size, int slopeLimit) {
+		int[] tops = new int[size * size];
+		int min = Integer.MAX_VALUE;
+		int max = Integer.MIN_VALUE;
+		int wetColumns = 0;
+		for (int x = 0; x < size; x++) {
+			for (int z = 0; z < size; z++) {
+				int g = groundY(level, x0 + x, z0 + z);
+				if (g == Integer.MIN_VALUE) {
+					return Survey.unfit("no ground");
+				}
+				int top = g;
+				BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos(x0 + x, level.getHeight(Heightmap.Types.MOTION_BLOCKING, x0 + x, z0 + z), z0 + z);
+				for (int i = 0; i < GROUND_SCAN && p.getY() > g; i++) {
+					if (!level.getFluidState(p).isEmpty()) {
+						top = p.getY();
+						wetColumns++;
+						break;
+					}
+					p.move(Direction.DOWN);
+				}
+				tops[x * size + z] = top;
+				min = Math.min(min, top);
+				max = Math.max(max, top);
+			}
+		}
+		if (wetColumns == 0) {
+			return Survey.unfit("dry");
+		}
+		if (max - min > slopeLimit) {
+			return Survey.unfit("slope");
+		}
+		int[] sorted = tops.clone();
+		Arrays.sort(sorted);
+		for (int x = -1; x <= size; x++) {
+			for (int z = -1; z <= size; z++) {
+				for (int y = min - 1; y <= max + 3; y++) {
+					if (level.getBlockState(new BlockPos(x0 + x, y, z0 + z)).is(WARDING)) {
+						return Survey.unfit("warded");
+					}
+				}
+			}
+		}
+		return new Survey(tops, min, max, sorted[sorted.length / 2], null, true);
 	}
 
 	// ---- reading the ground ----------------------------------------------------------------
@@ -198,7 +254,7 @@ public final class Terrain {
 				BlockPos floor = new BlockPos(x0 + x, y, z0 + z);
 				BlockState f = level.getBlockState(floor);
 				boolean floorOk = (!f.isAir() && !f.is(Blocks.BARRIER) && f.isCollisionShapeFullBlock(level, floor) && !PlayerBlocks.placedByPlayer(level, floor))
-						|| clearable(level, floor, f);
+						|| clearable(level, floor, f) || !f.getFluidState().isEmpty();   // water: the survey decides who may stand on it
 				if (!floorOk) {
 					return false;
 				}
@@ -207,6 +263,12 @@ public final class Terrain {
 					BlockState st = level.getBlockState(p);
 					if (st.is(SeedCityBlocks.PROBE) || st.is(SeedCityBlocks.TERMINAL) || (p.equals(seed) && st.is(SeedCityBlocks.SEED))) {
 						continue;
+					}
+					if (dy == 1 && isGround(level, p, st) && !PlayerBlocks.placedByPlayer(level, p)) {
+						continue;   // the surface row the cell sinks into: its paving replaces the top ground block
+					}
+					if (!st.getFluidState().isEmpty()) {
+						continue;   // water under a bridge deck
 					}
 					if (!clearable(level, p, st)) {
 						return false;
@@ -284,15 +346,15 @@ public final class Terrain {
 		java.util.Set<BlockPos> seen = new java.util.HashSet<>();
 		for (Direction side : openSides) {
 			for (int d = 1; d <= width; d++) {
-				int top = box.minY() - d;
+				int top = box.minY() + 1 - d;   // the cell's paving (local y=1) is ground level; bank down from there
 				List<BlockPos> row = row(box, side, d);
 				for (BlockPos column : row) {
 					if (insideCity.test(column) || !seen.add(column)) {
 						continue;
 					}
 					int g = groundY(level, column.getX(), column.getZ());
-					if (g == Integer.MIN_VALUE || g >= top) {
-						continue;
+					if (g == Integer.MIN_VALUE || g >= top || !level.getFluidState(new BlockPos(column.getX(), g + 1, column.getZ())).isEmpty()) {
+						continue;   // nothing to bank, or water: a river beside a bridge stays a river
 					}
 					BlockState surface = level.getBlockState(new BlockPos(column.getX(), g, column.getZ()));
 					BlockState under = level.getBlockState(new BlockPos(column.getX(), g - 1, column.getZ()));

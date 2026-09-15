@@ -112,7 +112,10 @@ public final class TerrainTests {
 					built++;
 					levels.add(c.slotY(s.key));
 				}
-				if (s.key.equals(new CityState.SlotKey(-2, -2)) && s.status == CityState.SlotStatus.BLOCKED && s.note.equals("water")) {
+				// the pond is never filled in: it stays water, or a bridge stands over it
+				if (s.key.equals(new CityState.SlotKey(-2, -2))
+						&& ((s.status == CityState.SlotStatus.BLOCKED && s.note.equals("water"))
+						|| (s.status == CityState.SlotStatus.BUILT && s.cell != null && s.cell.getPath().equals("river_bridge")))) {
 					pondBlocked = true;
 				}
 			}
@@ -128,12 +131,34 @@ public final class TerrainTests {
 					}
 				}
 			}
-			if (built >= 8 && levels.size() >= 2 && pondBlocked && apron > 0) {
+			// cells are cut into the land: no built cell's paving stands more than terrainStep above the
+			// lowest original ground under it (the core is tied to the Seed and exempt)
+			String raised = null;
+			for (CityState.Slot s : c.slots()) {
+				if (s.status != CityState.SlotStatus.BUILT || s.key.chebyshev() == 0 || s.anchor != null) {
+					continue;
+				}
+				BlockPos o = c.slotOrigin(s.key).subtract(origin);
+				int minGround = Integer.MAX_VALUE;
+				for (int dx = 0; dx < CityState.SLOT; dx++) {
+					for (int dz = 0; dz < CityState.SLOT; dz++) {
+						int x = o.getX() + dx;
+						int z = o.getZ() + dz;
+						if (x >= 0 && x < SIZE && z >= 0 && z < SIZE) {
+							minGround = Math.min(minGround, ground(x, z));
+						}
+					}
+				}
+				if (minGround != Integer.MAX_VALUE && o.getY() + 1 > minGround + c.cfg().terrainStep) {
+					raised = s.key + " paving at " + (o.getY() + 1) + " over ground " + minGround;
+				}
+			}
+			if (built >= 8 && levels.size() >= 2 && pondBlocked && raised == null) {
 				SeedCity.LOGGER.info("terrain test: built={} levels={} apron={} {}", built, levels, apron, c.describeSlots());
 				helper.succeed();
 			}
 			if (helper.getTick() > 8800) {
-				helper.fail("city did not fit the land: built=" + built + " levels=" + levels + " pond blocked=" + pondBlocked + " apron=" + apron + " " + c.describeSlots());
+				helper.fail("city did not fit the land: built=" + built + " levels=" + levels + " pond blocked=" + pondBlocked + " apron=" + apron + " raised=" + raised + " " + c.describeSlots());
 			}
 		});
 	}

@@ -8,5 +8,7 @@
   "truth": "sensor",
   "weights": { "core": 1, "residential": 2, "forge": 0, "plaza": 4, "ram": 0, "storage": 1 },
   "cost": { "redstone": 8, "stone": 60, "wood": 2 },
+  "street": true,
+  "doors": ["north", "south"],
   "setpiece": true
 }

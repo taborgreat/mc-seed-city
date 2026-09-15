@@ -45,6 +45,24 @@ Rules:
 - `settle` (optional, default 40) is how many game ticks the verifier waits after driving inputs.
 - `fault` (optional) names the one cell-local block the planner may leave out to plant this cell
   as a Fault Cell. Wires, junctions and bus segments declare their middle block.
+- `street` (default false) marks a cell you can walk through: wires, lanes, plazas, gates,
+  bridges. The two axes through the Core are avenues and take only street cells, so the Core is
+  always reachable on foot and the city reads as a cross of streets with districts between.
+- `doors` lists the faces a person enters by (`["north"]`, `["north", "south"]`). The grammar
+  weights a rotation by where its doors end up: three times for a door on a street, a little
+  more than one for a door on an open side, almost nothing for a door against another building.
+- `backs` lists faces that must look out of the city. A cell with backs stands only on the
+  perimeter (the ring at `maxRadiusSlots`) in a rotation that puts every back toward the outside:
+  walls and their corners.
+- `wet` marks a cell that stands only on water, at the water's level; a slot with water on it
+  takes only wet cells. Bridges.
+- Gate sites: the avenue slots just outside the Core (except the clock's and the bus gate's) and
+  where the avenues leave the city. A gate (an actuator you walk through, doors both ends) is
+  weighted ten times there.
+- Wiring behind walls: an output port is never pointed at a neighbour's solid wall block that has
+  wire, a diode, a torch, a piston or a door directly behind it, because the powered wall would
+  leak into that circuit. Cells with wiring along their sides should use glass there (the RAM
+  vault's long sides are windows for this reason).
 - `loot` (optional) is a loot table every chest in the cell is filled from when a Builder places it.
 - `setpiece` is `false` only for forge and decor cells.
 
@@ -85,7 +103,7 @@ them. Results are cached by (cell, neighbours, rotation).
 
 | Cell | Kind | Truth | Ports | Circuit |
 | --- | --- | --- | --- | --- |
-| core | core | none | sel_out E 4b, data_out E 4b, ret_in E 4b | open chamber around the Seed (a structure void keeps the Seed) with the bus gate on its east face: two terminal blocks the Core drives (select, data) and the return lane it reads; placed first by force |
+| core | core | none | sel_out E 4b, data_out E 4b, ret_in E 4b | open chamber around the Seed, which stands on a paved floor at (3,2,3) (a structure void keeps it) with the bus gate on its east face: two terminal blocks the Core drives (select, data) and the return lane it reads; placed first by force |
 | bus_street | logic | lanes | sel_in N, data_in N, ret_out N; sel_out S, data_out S, ret_in S (all 4b) | a paved street carrying the three bus lanes: select under the pavement at y=1, data and return on top under glass, one comparator per block so nothing is lost |
 | bus_branch | logic | branch | the street's six ports plus sel_out_e, data_out_e, ret_in_e (E, 4b) | a street that also taps select and data eastward and merges the eastern return into the northbound one (a block takes the stronger value, and only one vault answers a select) |
 | bus_end | logic | loopback | sel_in N, data_in N, ret_out N | end of a bus: data turns straight into return, so the Core can hear its own voice; the grammar's dead end for a street |
@@ -97,10 +115,16 @@ them. Results are cached by (cell, neighbours, rotation).
 | inverter | logic | not | in N 1b, out S 1b | repeater into a block, torch on the far side, dust out; lamp shows the inverted state |
 | register_block | logic | register | in N 4b, clk W 1b, out S 4b | a vault: four-comparator ring holds a strength; clk gates the ring, NOT clk gates the input; windows light when non-zero and a four-lamp gauge on the ground-floor wall shows the value (1, >4, >7, >10). Zero weights since the bus: for blueprints and hand-built circuits |
 | daylight_plaza | sensor | sensor | out S 4b | daylight detector read by a comparator: a slow 4-bit source |
-| drawbridge | actuator | actuator | in N 1b | a plank deck with a slime spine spans a water channel between two banks; the input powers a pier that drives one sticky piston, lifting the whole deck |
+| drawbridge | actuator | actuator | in N 1b | a plank deck with a slime spine spans a water channel between two banks; the input powers a pier that drives one sticky piston, lifting the whole deck. Plazas only, as a pond feature; see river_bridge for real water |
 | garden_lane | logic | passthrough | in N 1b, out S 1b | the street's middle three columns only; the verges are structure void, so the grass, flowers or tree edge already there stay and the city breathes between buildings |
 | gatehouse | actuator | actuator | gate W 4b | a three-wide arch over the street between two towers; a dust stair in the west tower's window wall powers three sticky pistons that drop a portcullis of iron bars into the south mouth; any value above 0 shuts it |
 | footfall_plaza | sensor | sensor | out S 4b | three gold pressure plates across the path; the blocks under them carry the weight to a dust row and a comparator: one player reads 1, a crowd more |
+| city_wall | decor | none | none | a two-thick rampart with a walkway and merlons along the cell's south edge, the rest structure void; stands only on the city's perimeter with its back to the world (`backs`) |
+| city_wall_corner | decor | none | none | ramparts along the south and east edges meeting in a tower stub; the perimeter's corners |
+| river_bridge | actuator | actuator | in N 1b | the drawbridge's deck and banks over a structure-void channel: it stands only on water (`wet`), its piers are founded down to the bed, and the river keeps flowing under it; an avenue crosses a river on one |
+| lamp_tower | actuator | actuator | in N 4b | fifteen lamps spiral up an 18-block mast; dust on each lamp climbs the spiral losing one per step, so lamp k is lit exactly when the input is at least k: a value you can read from across the city |
+| decoder_plaza | logic | decoder | in N 4b; out1 W 1b, out8 W 1b (7x14) | the input runs down a dust snake under the paving; two vault-style detectors light and drive an exit each, at exactly 1 and exactly 8 |
+| shrine | actuator | actuator | in N 4b | four pillars around an altar with a bell; the vault's lock leaves 1 only at exactly 15, which rings the bell and lights the lamps in the floor |
 | storage_cell | storage | none | none | brick warehouse with barrels and a roof crane; Collectors unload and Builders fetch here |
 | decor_plaza | decor | none | none | paved square with a fountain and lantern posts; the grammar's always-legal fallback |
 | alu_sub | logic | sub | a N 4b, b W 4b, out S 4b | one subtract-mode comparator: out = max(a − b, 0) |

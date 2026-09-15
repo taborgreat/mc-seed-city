@@ -9,5 +9,6 @@
   "truth": "not",
   "weights": { "core": 1, "residential": 2, "forge": 6, "plaza": 1, "ram": 1, "storage": 0 },
   "cost": { "redstone": 6, "stone": 50, "wood": 0 },
+  "street": true,
   "setpiece": true
 }

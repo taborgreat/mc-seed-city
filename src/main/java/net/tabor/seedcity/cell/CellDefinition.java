@@ -37,10 +37,20 @@ public record CellDefinition(
 		boolean setpiece,
 		int settleTicks,
 		BlockPos fault,
-		Identifier loot
+		Identifier loot,
+		boolean street,
+		List<net.minecraft.core.Direction> doors,
+		List<net.minecraft.core.Direction> backs,
+		boolean wet
 ) {
 	public boolean faultable() {
 		return fault != null;
+	}
+
+	/** Older callers: not a street, no doors, no backs, dry. */
+	public CellDefinition(Identifier id, CellKind kind, Vec3i size, List<Port> ports, String truth, Map<String, Integer> weights,
+						  Map<String, Integer> cost, boolean setpiece, int settleTicks, BlockPos fault, Identifier loot) {
+		this(id, kind, size, ports, truth, weights, cost, setpiece, settleTicks, fault, loot, false, List.of(), List.of(), false);
 	}
 
 	public static final int DEFAULT_SETTLE_TICKS = 40;
@@ -70,6 +80,21 @@ public record CellDefinition(
 
 	public int weight(String district) {
 		return weights.getOrDefault(district, 0);
+	}
+
+	private static List<net.minecraft.core.Direction> faces(JsonObject json, String key) throws CellFormatException {
+		List<net.minecraft.core.Direction> out = new ArrayList<>();
+		if (json.has(key)) {
+			for (JsonElement e : GsonHelper.getAsJsonArray(json, key)) {
+				String name = GsonHelper.convertToString(e, key);
+				net.minecraft.core.Direction d = net.minecraft.core.Direction.byName(name);
+				if (d == null || d.getAxis().isVertical()) {
+					throw new CellFormatException(key + " must name horizontal faces, got " + name);
+				}
+				out.add(d);
+			}
+		}
+		return List.copyOf(out);
 	}
 
 	public static CellDefinition parse(JsonObject json) throws CellFormatException {
@@ -108,7 +133,13 @@ public record CellDefinition(
 				}
 			}
 			Identifier loot = json.has("loot") ? Identifier.parse(GsonHelper.getAsString(json, "loot")) : null;
-			return new CellDefinition(id, kind, size, ports, truth, weights, cost, setpiece, settle, fault, loot);
+			// street: walkable through, may stand on an avenue; doors: faces a person enters by, which like to meet a street
+			boolean street = GsonHelper.getAsBoolean(json, "street", false);
+			List<net.minecraft.core.Direction> doors = faces(json, "doors");
+			// backs: faces that must look out of the city (walls); wet: stands only on water (bridges)
+			List<net.minecraft.core.Direction> backs = faces(json, "backs");
+			boolean wet = GsonHelper.getAsBoolean(json, "wet", false);
+			return new CellDefinition(id, kind, size, ports, truth, weights, cost, setpiece, settle, fault, loot, street, doors, backs, wet);
 		} catch (JsonSyntaxException | IllegalStateException | IllegalArgumentException e) {
 			throw new CellFormatException(e.getMessage(), e);
 		}

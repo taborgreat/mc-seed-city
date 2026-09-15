@@ -189,7 +189,7 @@ public final class ComputerTests {
 		CityState c = rootCity(helper, quietConfig());
 		ServerLevel level = helper.getLevel();
 		BlockPos feet = helper.absolutePos(new BlockPos(9, 2, 9));
-		Placement p = new Placement(CellLibrary.get(SeedCity.id("register_block")).orElseThrow(), feet.offset(-3, -1, -3), Rotation.NONE);
+		Placement p = new Placement(CellLibrary.get(SeedCity.id("register_block")).orElseThrow(), feet.offset(-3, -2, -3), Rotation.NONE);
 		helper.assertTrue(c.buildableAt(level, p), "the platform corner should be buildable");
 		helper.onEachTick(() -> {
 			if (helper.getTick() == 40) {

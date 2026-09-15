@@ -72,6 +72,36 @@ public final class CellBuilder {
 		return this;
 	}
 
+	private boolean street = false;
+	private final List<Dir> doors = new java.util.ArrayList<>();
+
+	/** Walkable through and allowed on an avenue: wires, lanes, plazas, gates, bridges. */
+	public CellBuilder street() {
+		this.street = true;
+		return this;
+	}
+
+	/** Faces a person enters by; the grammar turns them toward streets. */
+	public CellBuilder door(Dir... faces) {
+		doors.addAll(List.of(faces));
+		return this;
+	}
+
+	private final List<Dir> backs = new java.util.ArrayList<>();
+	private boolean wet = false;
+
+	/** Faces that must look out of the city: a wall stands only on the perimeter, its back to the world. */
+	public CellBuilder back(Dir... faces) {
+		backs.addAll(List.of(faces));
+		return this;
+	}
+
+	/** Stands only on water: a bridge. */
+	public CellBuilder wet() {
+		this.wet = true;
+		return this;
+	}
+
 	public CellBuilder setpiece(boolean s) {
 		this.setpiece = s;
 		return this;
@@ -339,6 +369,26 @@ public final class CellBuilder {
 		}
 		if (loot != null) {
 			sb.append("  \"loot\": \"").append(loot).append("\",\n");
+		}
+		if (street) {
+			sb.append("  \"street\": true,\n");
+		}
+		if (!doors.isEmpty()) {
+			sb.append("  \"doors\": [");
+			for (int i = 0; i < doors.size(); i++) {
+				sb.append(i == 0 ? "\"" : ", \"").append(doors.get(i).key()).append('"');
+			}
+			sb.append("],\n");
+		}
+		if (!backs.isEmpty()) {
+			sb.append("  \"backs\": [");
+			for (int i = 0; i < backs.size(); i++) {
+				sb.append(i == 0 ? "\"" : ", \"").append(backs.get(i).key()).append('"');
+			}
+			sb.append("],\n");
+		}
+		if (wet) {
+			sb.append("  \"wet\": true,\n");
 		}
 		sb.append("  \"setpiece\": ").append(setpiece).append("\n");
 		sb.append("}\n");

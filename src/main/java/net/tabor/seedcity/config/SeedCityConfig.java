@@ -32,8 +32,8 @@ public final class SeedCityConfig {
 	 * they bring home.
 	 */
 	public int initialRedstone = 1200;
-	public int initialStone = 1500;
-	public int initialWood = 40;
+	public int initialStone = 4000;
+	public int initialWood = 120;
 	public boolean unlimitedMaterials = false;
 	/** Hard chunk cap: growth stops once the city footprint spans this many chunks. */
 	public int maxChunks = 64;

@@ -1,14 +1,15 @@
 {
-  "id": "seedcity:drawbridge",
+  "id": "seedcity:river_bridge",
   "kind": "actuator",
   "size": [7, 5, 7],
   "ports": [
     { "name": "in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 1 }
   ],
   "truth": "actuator",
-  "weights": { "core": 0, "residential": 0, "forge": 0, "plaza": 2, "ram": 0, "storage": 0 },
-  "cost": { "redstone": 10, "stone": 90, "wood": 24 },
+  "weights": { "core": 2, "residential": 2, "forge": 2, "plaza": 2, "ram": 2, "storage": 2 },
+  "cost": { "redstone": 10, "stone": 120, "wood": 24 },
   "street": true,
   "doors": ["north", "south"],
+  "wet": true,
   "setpiece": true
 }

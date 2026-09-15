@@ -99,6 +99,17 @@ public final class Grammar {
 	public static Optional<Choice> choose(FrontierSlot slot, Function<Choice, Optional<Map<Face, Constraint>>> room, Optional<Goal> goal,
 										  Map<net.minecraft.resources.Identifier, Integer> wanted,
 										  Map<net.minecraft.resources.Identifier, Integer> existing, Random rng, Collection<Cell> library) {
+		return choose(slot, room, goal, wanted, existing, rng, library, c -> true);
+	}
+
+	/**
+	 * @param allowed which library cells may stand in this slot (an avenue takes only streets); the
+	 *                whole library still decides what the program wants
+	 */
+	public static Optional<Choice> choose(FrontierSlot slot, Function<Choice, Optional<Map<Face, Constraint>>> room, Optional<Goal> goal,
+										  Map<net.minecraft.resources.Identifier, Integer> wanted,
+										  Map<net.minecraft.resources.Identifier, Integer> existing, Random rng, Collection<Cell> library,
+										  java.util.function.Predicate<Cell> allowed) {
 		List<Cell> cells = new ArrayList<>(library);
 		cells.sort(Comparator.comparing(c -> c.id().toString()));
 
@@ -115,7 +126,7 @@ public final class Grammar {
 		for (Cell cell : cells) {
 			int base = cell.definition().weight(slot.district());
 			int want = wanted.getOrDefault(cell.id(), 0);
-			if (base <= 0) {
+			if (base <= 0 || !allowed.test(cell)) {
 				continue;   // zoning holds even for wanted cells: ALU cells grow in the Forge, vaults in RAM
 			}
 			if (wantsBus && want == 0 && hasBusInput(cell) && busOutputs(cell) != 2) {
@@ -137,13 +148,31 @@ public final class Grammar {
 				if (hasBusInput(cell) && fit.busFed() == 0) {
 					continue;   // a bus cell off the bus is a dead street: only grow them where a live lane arrives
 				}
-				double w = base;
+				// walls stand only on the perimeter with every back to the outside; gates take the gate sites
+				List<Direction> backs = cell.definition().backs();
+				if (!backs.isEmpty()) {
+					boolean fits = !slot.edges().isEmpty();
+					for (Direction back : backs) {
+						fits &= slot.edges().contains(rotation.rotate(back));
+					}
+					if (!fits) {
+						continue;
+					}
+				}
+				double w = base * doorFactor(cell, rotation, bySide.get());
+				if (!backs.isEmpty()) {
+					w *= 10;
+				}
+				if (slot.gateSite() && isGate(cell)) {
+					w *= 10;
+				}
 				if (want > 0) {
 					w *= 6 * want;
 				} else {
 					int have = existing.getOrDefault(cell.id(), 0);
 					CellKind kind = cell.definition().kind();
-					if (have > 0 && (kind == CellKind.ACTUATOR || kind == CellKind.DECOR || kind == CellKind.STORAGE || kind == CellKind.SENSOR)) {
+					if (have > 0 && backs.isEmpty() && !(slot.gateSite() && isGate(cell))
+							&& (kind == CellKind.ACTUATOR || kind == CellKind.DECOR || kind == CellKind.STORAGE || kind == CellKind.SENSOR)) {
 						w /= 1 + 0.75 * have;
 					}
 				}
@@ -223,9 +252,98 @@ public final class Grammar {
 		return Optional.of(pool.getLast().choice());
 	}
 
+	/** Blocks a powered wall block would disturb: wire, diodes, torches, pistons, doors. */
+	public static boolean component(net.minecraft.world.level.block.state.BlockState s) {
+		net.minecraft.world.level.block.Block b = s.getBlock();
+		return b instanceof net.minecraft.world.level.block.RedStoneWireBlock || b instanceof net.minecraft.world.level.block.DiodeBlock
+				|| b instanceof net.minecraft.world.level.block.RedstoneTorchBlock || b instanceof net.minecraft.world.level.block.piston.PistonBaseBlock
+				|| b instanceof net.minecraft.world.level.block.DoorBlock || b instanceof net.minecraft.world.level.block.TrapDoorBlock;
+	}
+
+	/**
+	 * Positions on the rotated cell's outer faces where a solid wall block has a component directly
+	 * behind, above, below or beside it inside the cell. An output from a neighbour pointed at such
+	 * a block would power it and leak into the circuit, so those spots must stay blank.
+	 * Keys: {@code face.side.ordinal() * (1 << 24) + face.offset * (1 << 16) + Constraint.at(along, y)}.
+	 */
+	public static java.util.Set<Long> sensitive(Cell cell, Rotation rotation) {
+		net.minecraft.core.Vec3i size = cell.size();
+		BlockPos shift = Cell.rotationShift(rotation, size);
+		Map<BlockPos, net.minecraft.world.level.block.state.BlockState> box = new java.util.HashMap<>();
+		for (Cell.CellBlock b : cell.blocks(rotation)) {
+			box.put(b.pos().offset(shift), b.state());
+		}
+		int sx = rotation == Rotation.NONE || rotation == Rotation.CLOCKWISE_180 ? size.getX() : size.getZ();
+		int sz = rotation == Rotation.NONE || rotation == Rotation.CLOCKWISE_180 ? size.getZ() : size.getX();
+		java.util.Set<Long> out = new java.util.HashSet<>();
+		for (Map.Entry<BlockPos, net.minecraft.world.level.block.state.BlockState> e : box.entrySet()) {
+			BlockPos p = e.getKey();
+			if (!e.getValue().canOcclude()) {
+				continue;
+			}
+			for (Direction side : new Direction[] {Direction.WEST, Direction.EAST, Direction.NORTH, Direction.SOUTH}) {
+				boolean onFace = switch (side) {
+					case WEST -> p.getX() == 0;
+					case EAST -> p.getX() == sx - 1;
+					case NORTH -> p.getZ() == 0;
+					default -> p.getZ() == sz - 1;
+				};
+				if (!onFace) {
+					continue;
+				}
+				boolean hot = false;
+				for (Direction d : Direction.values()) {
+					if (d == side) {
+						continue;   // outward is the neighbour's business
+					}
+					net.minecraft.world.level.block.state.BlockState n = box.get(p.relative(d));
+					if (n != null && component(n)) {
+						hot = true;
+						break;
+					}
+				}
+				if (!hot) {
+					continue;
+				}
+				int a = side.getAxis() == Direction.Axis.Z ? p.getX() : p.getZ();
+				out.add(key(side, a / SLOT, a % SLOT, p.getY()));
+			}
+		}
+		return out;
+	}
+
+	private static long key(Direction side, int offset, int along, int y) {
+		return (long) side.ordinal() * (1 << 24) + (long) offset * (1 << 16) + Constraint.at(along, y);
+	}
+
 	/** Checks the rotated cell against the constraints on its footprint's faces and counts how it connects. */
 	public static Fit fit(Cell cell, Rotation rotation, Map<Face, Constraint> bySide) {
 		List<BoxPort> ports = boxPorts(cell, rotation);
+		// a neighbour's output pointed at our blank wall must not have our wiring behind that wall
+		java.util.Set<Long> ourSensitive = null;
+		for (Map.Entry<Face, Constraint> e : bySide.entrySet()) {
+			for (Constraint.Facing theirs : e.getValue().facing()) {
+				if (theirs.port().dir() != PortDir.OUT) {
+					continue;
+				}
+				boolean met = false;
+				for (BoxPort ours : ports) {
+					if (ours.face().equals(e.getKey()) && ours.along() == theirs.along() && ours.y() == theirs.y()) {
+						met = true;
+						break;
+					}
+				}
+				if (met) {
+					continue;
+				}
+				if (ourSensitive == null) {
+					ourSensitive = sensitive(cell, rotation);
+				}
+				if (ourSensitive.contains(key(e.getKey().side(), e.getKey().offset(), theirs.along(), theirs.y()))) {
+					return Fit.ILLEGAL;
+				}
+			}
+		}
 		int live = 0;
 		int dead = 0;
 		int feeds = 0;
@@ -243,6 +361,9 @@ public final class Grammar {
 			}
 			Constraint.Facing theirs = c.meeting(ours.along(), ours.y());
 			if (theirs == null) {
+				if (ours.port().dir() == PortDir.OUT && c.sensitiveAt(ours.along(), ours.y())) {
+					return Fit.ILLEGAL;   // our output would power a wall with the neighbour's wiring behind it
+				}
 				continue;   // a port against a blank wall dead-ends: allowed
 			}
 			if (!ours.port().compatibleWith(theirs.port())) {
@@ -272,6 +393,31 @@ public final class Grammar {
 			}
 		}
 		return new Fit(true, live, dead, feeds, openOuts, straight, sameWidth, busFed);
+	}
+
+	/**
+	 * A building turns its door toward a street: a door on a street is worth three times as much,
+	 * a door on an open side (a street may come) a little more than one, a door against another
+	 * building almost nothing. Cells without doors are unaffected.
+	 */
+	public static double doorFactor(Cell cell, Rotation rotation, Map<Face, Constraint> bySide) {
+		double f = 1;
+		for (Direction door : cell.definition().doors()) {
+			Constraint c = bySide.get(new Face(0, rotation.rotate(door)));
+			if (c == null) {
+				f *= 1.25;
+			} else if (c.street()) {
+				f *= 3;
+			} else {
+				f *= 0.3;
+			}
+		}
+		return f;
+	}
+
+	/** A gate: an actuator you walk through, with doors both ends. */
+	public static boolean isGate(Cell cell) {
+		return cell.definition().kind() == CellKind.ACTUATOR && cell.definition().street() && cell.definition().doors().size() >= 2;
 	}
 
 	/** Whether the cell listens to a bus lane (a street, branch, end or RAM vault). */

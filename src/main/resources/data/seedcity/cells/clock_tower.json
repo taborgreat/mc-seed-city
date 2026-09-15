@@ -8,5 +8,6 @@
   "truth": "clock",
   "weights": { "core": 0, "residential": 0, "forge": 0, "plaza": 0 },
   "cost": { "redstone": 60, "stone": 400, "wood": 0 },
+  "doors": ["north"],
   "setpiece": true
 }

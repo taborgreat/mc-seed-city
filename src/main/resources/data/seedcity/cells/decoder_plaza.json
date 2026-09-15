@@ -1,0 +1,14 @@
+{
+  "id": "seedcity:decoder_plaza",
+  "kind": "logic",
+  "size": [7, 4, 14],
+  "ports": [
+    { "name": "in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 4 },
+    { "name": "out1", "dir": "out", "face": "west", "pos": [0, 1, 3], "bits": 1 },
+    { "name": "out8", "dir": "out", "face": "west", "pos": [0, 1, 10], "bits": 1 }
+  ],
+  "truth": "decoder",
+  "weights": { "core": 1, "residential": 2, "forge": 2, "plaza": 4, "ram": 2, "storage": 1 },
+  "cost": { "redstone": 40, "stone": 160, "wood": 4 },
+  "setpiece": true
+}

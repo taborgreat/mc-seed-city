@@ -6,5 +6,6 @@
   "truth": "none",
   "weights": { "core": 2, "residential": 1, "forge": 1, "plaza": 1, "ram": 0, "storage": 8 },
   "cost": { "redstone": 0, "stone": 100, "wood": 60 },
+  "doors": ["north"],
   "setpiece": true
 }

@@ -107,8 +107,12 @@ public final class BuildTask {
 								   int foundationDepth, int apronWidth) {
 		Set<BlockPos> has = new HashSet<>();
 		Map<BlockPos, BlockState> floor = new java.util.HashMap<>();
+		BlockPos omitWorld = omit == null ? null : placement.origin().offset(omit.rotate(placement.rotation()));
 		for (Cell.CellBlock b : placement.cell().blocks(placement.rotation())) {
 			BlockPos world = placement.origin().offset(b.pos());
+			if (world.equals(omitWorld)) {
+				continue;   // a planted fault is a hole: whatever the land has there is dug out too
+			}
 			has.add(world);
 			if (world.getY() == placement.footprint().minY() && b.state().canOcclude()) {
 				floor.put(world, b.state());

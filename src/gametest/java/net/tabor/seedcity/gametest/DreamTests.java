@@ -135,7 +135,14 @@ public final class DreamTests {
 			if (!c.wantedCells().isEmpty()) {
 				sawPlan[0] = true;
 			}
-			if (sawPlan[0] && c.dreaming() && c.programLive() && !c.builtOfType("drawbridge").isEmpty()) {
+			boolean actuator = false;
+			for (CityState.Slot s : c.slots()) {
+				if (s.status == CityState.SlotStatus.BUILT && s.cell != null
+						&& net.tabor.seedcity.cell.CellLibrary.get(s.cell).map(cell -> cell.definition().kind() == net.tabor.seedcity.cell.CellKind.ACTUATOR).orElse(false)) {
+					actuator = true;
+				}
+			}
+			if (sawPlan[0] && c.dreaming() && c.programLive() && actuator) {
 				SeedCity.LOGGER.info("dream growth: live after {} dream(s); {}", c.dreamCount(), c.summary());
 				helper.succeed();
 			}

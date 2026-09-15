@@ -34,7 +34,178 @@ public final class Cells {
 		return List.of(busSegment(), inverter(), registerBlock(), clockTower(), drawbridge(), storageCell(),
 				core(), decorPlaza(), daylightPlaza(), wireSegment(), junction(),
 				aluSub(), aluNot(), aluOr(), vault(), busStreet(), busEnd(), busBranch(), ramVault(1), ramVault(2),
-				gardenLane(), gatehouse(), footfallPlaza());
+				gardenLane(), gatehouse(), footfallPlaza(), cityWall(), cityWallCorner(), riverBridge(),
+				lampTower(), decoderPlaza(), shrine());
+	}
+
+	/**
+	 * The shrine (design doc 5.1: "a shrine that wakes something when the lights align"): four
+	 * pillars around an altar with a bell. The vault's lock (input minus a constant 14) leaves 1
+	 * only at exactly 15; that 1 powers the altar block, which rings the bell and lights the
+	 * lamps set in the floor around it. A program has to reach 15 to ring it.
+	 */
+	static CellBuilder shrine() {
+		CellBuilder b = shell("shrine", 7);
+		b.fill(0, 1, 0, 6, 1, 6, PAVING);
+		for (int[] c : new int[][] {{1, 1}, {5, 1}, {1, 5}, {5, 5}}) {
+			b.fill(c[0], 2, c[1], c[0], 4, c[1], "minecraft:polished_deepslate");
+			b.set(c[0], 5, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		}
+		b.fill(1, 5, 1, 5, 5, 5, "minecraft:polished_deepslate");   // the roof over the altar
+		b.set(3, 6, 3, "minecraft:glowstone");
+		// the lock: in - 14, so only 15 leaves anything
+		b.comparator(3, 1, 0, SOUTH, false);
+		b.comparator(3, 1, 1, SOUTH, true);
+		b.torch(0, 1, 1);
+		b.dust(1, 1, 1).dust(2, 1, 1);
+		b.set(3, 1, 2, "minecraft:chiseled_stone_bricks");      // the altar block, powered at 15
+		b.set(3, 2, 2, BlockSpec.of("minecraft:bell", "attachment", "floor", "facing", "north", "powered", "false"));
+		b.lamp(2, 1, 2).lamp(4, 1, 2).lamp(3, 1, 3);
+		return b.door(NORTH).kind("actuator").truth("actuator")
+				.port("in", "in", NORTH, 3, 1, 0, 4)
+				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 3).weight("ram", 1).weight("storage", 1)
+				.cost(16, 140, 0);
+	}
+
+	/**
+	 * The lamp tower (the first display): fifteen lamps spiral up a mast and the input value
+	 * lights that many of them. The port feeds lamp 1 through a comparator; dust on lamp 1
+	 * carries the value and climbs a spiral stair whose steps are the lamps, losing one per step,
+	 * so lamp k is lit exactly when the value is at least k. Readable from across the city.
+	 */
+	static CellBuilder lampTower() {
+		CellBuilder b = shell("lamp_tower", 18);
+		b.fill(0, 1, 0, 6, 1, 6, PAVING);
+		b.comparator(3, 1, 0, SOUTH, false);          // in
+		b.comparator(3, 1, 1, SOUTH, false);          // into lamp 1, which it powers strongly
+		int[][] ring = {{3, 2}, {4, 2}, {4, 3}, {4, 4}, {3, 4}, {2, 4}, {2, 3}, {2, 2}};
+		for (int k = 1; k <= 15; k++) {
+			int[] p = ring[(k - 1) % 8];
+			b.lamp(p[0], k, p[1]);                    // lamp k
+			b.dust(p[0], k + 1, p[1]);                // dust k on it: value - (k - 1)
+		}
+		b.fill(3, 2, 3, 3, 16, 3, BRICK);             // the mast the lamps wind around
+		b.set(3, 17, 3, "minecraft:glowstone");
+		lanternPosts(b, 2);
+		return b.kind("actuator").truth("actuator")
+				.port("in", "in", NORTH, 3, 1, 0, 4)
+				.weight("core", 2).weight("residential", 2).weight("forge", 1).weight("plaza", 3).weight("ram", 2).weight("storage", 2)
+				.cost(60, 120, 0);
+	}
+
+	/**
+	 * The decoder plaza (design doc 5.1: "a plaza where one of several doors opens per cycle"):
+	 * two slots long. The input value runs down a dust snake along the east side; two detectors
+	 * on the west, built like the RAM vault's address decoders, light and drive an exit each:
+	 * {@code out1} when the value is exactly 1, {@code out8} when it is exactly 8. A program
+	 * steering a value through the plaza opens one door at a time.
+	 */
+	static CellBuilder decoderPlaza() {
+		CellBuilder b = new CellBuilder("decoder_plaza", 7, 4, 14);
+		b.fill(0, 0, 0, 6, 0, 13, STONE);
+		b.fill(0, 1, 0, 6, 1, 13, PAVING);
+		b.comparator(3, 1, 0, SOUTH, false);          // in
+		b.comparator(3, 1, 1, SOUTH, false);
+		b.set(3, 1, 2, BRICK);                        // B = value
+		b.comparator(4, 1, 2, EAST, false);
+		b.set(5, 1, 2, BRICK);                        // the snake starts under B'
+		for (int z = 3; z <= 12; z++) {
+			b.dust(5, 1, z);                          // value - (z - 3)
+			b.set(5, 2, z, GRATE);
+		}
+		for (int z : new int[] {3, 10}) {             // detectors: exactly z - 2
+			b.repeater(4, 1, z, WEST, 1);
+			b.set(3, 1, z, BRICK);                    // T: at least z-2
+			b.repeater(4, 1, z + 1, WEST, 1);
+			b.set(3, 1, z + 1, BRICK);                // b: at least z-1
+			b.dust(2, 1, z + 1);                      // 15 beside b
+			b.set(2, 2, z + 1, GRATE);
+			b.comparator(2, 1, z, WEST, true);        // T - b
+			b.set(1, 1, z, BRICK);                    // the exit's block, lit above
+			b.lamp(1, 2, z);
+			b.repeater(0, 1, z, WEST, 1);             // the exit
+		}
+		lanternPosts(b, 2);
+		b.set(0, 2, 13, "minecraft:oak_fence").set(0, 3, 13, BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		b.set(6, 2, 13, "minecraft:oak_fence").set(6, 3, 13, BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		return b.kind("logic").truth("decoder")
+				.port("in", "in", NORTH, 3, 1, 0, 4)
+				.port("out1", "out", WEST, 0, 1, 3, 1)
+				.port("out8", "out", WEST, 0, 1, 10, 1)
+				.weight("core", 1).weight("residential", 2).weight("forge", 2).weight("plaza", 4).weight("ram", 2).weight("storage", 1)
+				.cost(40, 160, 4);
+	}
+
+	/**
+	 * The city wall: a two-thick rampart along the cell's south edge with a walkway behind the
+	 * parapet and merlons on top. Everything north of it is structure void, so the land inside the
+	 * wall stays land. Stands only on the perimeter with its back to the world (sidecar {@code backs}).
+	 */
+	static CellBuilder cityWall() {
+		CellBuilder b = new CellBuilder("city_wall", 7, 6, 7);
+		b.fill(0, 0, 0, 6, 5, 4, "minecraft:structure_void");
+		b.fill(0, 0, 5, 6, 0, 6, STONE);
+		rampart(b, 0, 6, 5, 6, true);
+		return b.back(SOUTH).kind("decor").truth("none")
+				.weight("core", 1).weight("residential", 1).weight("forge", 1).weight("plaza", 1).weight("ram", 1).weight("storage", 1)
+				.cost(0, 160, 0);
+	}
+
+	/** The wall's corner: ramparts along the south and east edges meeting in a tower stub. */
+	static CellBuilder cityWallCorner() {
+		CellBuilder b = new CellBuilder("city_wall_corner", 7, 6, 7);
+		b.fill(0, 0, 0, 4, 5, 4, "minecraft:structure_void");
+		b.fill(0, 0, 5, 6, 0, 6, STONE).fill(5, 0, 0, 6, 0, 6, STONE);
+		rampart(b, 0, 6, 5, 6, true);
+		b.fill(6, 1, 0, 6, 4, 6, BRICK).fill(5, 1, 0, 5, 3, 6, BRICK);
+		for (int z = 0; z <= 6; z += 2) {
+			b.set(6, 5, z, BRICK);
+		}
+		b.fill(5, 4, 5, 6, 5, 6, BRICK).set(5, 6 - 1, 5, BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		return b.back(SOUTH, EAST).kind("decor").truth("none")
+				.weight("core", 1).weight("residential", 1).weight("forge", 1).weight("plaza", 1).weight("ram", 1).weight("storage", 1)
+				.cost(0, 260, 0);
+	}
+
+	/** A rampart along z=z1 (the outer face) with a walkway ledge at z=z0, x from x0 to x1, merlons on top. */
+	private static void rampart(CellBuilder b, int x0, int x1, int z0, int z1, boolean merlons) {
+		b.fill(x0, 1, z1, x1, 4, z1, BRICK);
+		b.fill(x0, 1, z0, x1, 3, z0, BRICK);
+		if (merlons) {
+			for (int x = x0; x <= x1; x += 2) {
+				b.set(x, 5, z1, BRICK);
+			}
+		}
+	}
+
+	/**
+	 * The river bridge: the drawbridge's deck and banks, but the channel under the deck is structure
+	 * void, so it stands over real water (the survey admits it only there, sidecar {@code wet}) and
+	 * the river keeps flowing under it. The piers stand in the water; the site work founds them
+	 * down to the bed. Rises with its input like the drawbridge.
+	 */
+	static CellBuilder riverBridge() {
+		CellBuilder b = shell("river_bridge", 5);
+		b.fill(0, 1, 0, 6, 2, 2, BRICK);                        // north bank
+		b.fill(0, 1, 6, 6, 2, 6, BRICK);                        // south bank
+		b.fill(0, 1, 3, 0, 1, 5, BRICK).fill(6, 1, 3, 6, 1, 5, BRICK);   // side piers
+		b.fill(1, 0, 3, 5, 1, 5, "minecraft:structure_void");   // the river, and its bed, are left alone
+		b.set(3, 1, 3, "minecraft:chiseled_stone_bricks");      // the pier the input powers
+		b.stickyPiston(3, 1, 4, UP);
+		b.fill(2, 2, 3, 4, 2, 3, PLANKS).fill(2, 2, 5, 4, 2, 5, PLANKS);
+		b.fill(2, 2, 4, 4, 2, 4, "minecraft:slime_block");
+		b.repeater(3, 1, 0, SOUTH, 1);
+		b.dust(3, 1, 1);
+		b.repeater(3, 1, 2, SOUTH, 1);
+		b.fill(3, 2, 0, 3, 2, 2, GRATE);
+		for (int[] c : new int[][] {{0, 0}, {6, 0}, {0, 6}, {6, 6}}) {
+			b.set(c[0], 3, c[1], "minecraft:oak_fence");
+			b.set(c[0], 4, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		}
+		return b.street().door(NORTH, SOUTH).wet().kind("actuator").truth("actuator")
+				.port("in", "in", NORTH, 3, 1, 0, 1)
+				.weight("core", 2).weight("residential", 2).weight("forge", 2).weight("plaza", 2).weight("ram", 2).weight("storage", 2)
+				.cost(10, 120, 24);
 	}
 
 	/**
@@ -58,7 +229,7 @@ public final class Cells {
 		b.comparator(3, 1, 1, SOUTH, true);
 		b.torch(0, 1, 1);
 		b.dust(1, 1, 1).dust(2, 1, 1);
-		return b.kind("actuator").truth("actuator").loot("minecraft:chests/simple_dungeon")
+		return b.door(NORTH).kind("actuator").truth("actuator").loot("minecraft:chests/simple_dungeon")
 				.port("in", "in", NORTH, 3, 1, 0, 4)
 				.weight("core", 0).weight("residential", 1).weight("forge", 0).weight("plaza", 2).weight("ram", 1).weight("storage", 3)
 				.cost(12, 120, 10);
@@ -145,18 +316,21 @@ public final class Cells {
 	 * Never chosen by the grammar (zero weights); the planner places it by force.
 	 */
 	static CellBuilder core() {
-		CellBuilder b = shell("core", 5);
-		b.set(3, 1, 3, "minecraft:structure_void");
+		// local y=1 is ground level everywhere in the city: the chamber floor is paving there, the
+		// Seed stands on it at (3,2,3), and the bus gate keeps its lane heights (select y=1, data y=3)
+		CellBuilder b = shell("core", 6);
+		b.fill(0, 1, 0, 6, 1, 6, PAVING);
+		b.set(3, 2, 3, "minecraft:structure_void");
 		for (int[] c : new int[][] {{1, 1}, {5, 1}, {1, 5}, {5, 5}}) {
-			b.fill(c[0], 1, c[1], c[0], 3, c[1], "minecraft:chiseled_stone_bricks");
+			b.fill(c[0], 2, c[1], c[0], 4, c[1], "minecraft:chiseled_stone_bricks");
 		}
-		b.fill(0, 4, 0, 6, 4, 6, BRICK);
-		b.set(3, 4, 3, GLASS);
-		b.set(3, 3, 3, BlockSpec.of("minecraft:lantern", "hanging", "true"));
-		b.set(2, 0, 3, "minecraft:chiseled_stone_bricks").set(4, 0, 3, "minecraft:chiseled_stone_bricks")
-				.set(3, 0, 2, "minecraft:chiseled_stone_bricks").set(3, 0, 4, "minecraft:chiseled_stone_bricks");
+		b.fill(0, 5, 0, 6, 5, 6, BRICK);
+		b.set(3, 5, 3, GLASS);
+		b.set(3, 4, 3, BlockSpec.of("minecraft:lantern", "hanging", "true"));
+		b.set(2, 1, 3, "minecraft:chiseled_stone_bricks").set(4, 1, 3, "minecraft:chiseled_stone_bricks")
+				.set(3, 1, 2, "minecraft:chiseled_stone_bricks").set(3, 1, 4, "minecraft:chiseled_stone_bricks");
 		// the Card Reader: a slot on the south side of the chamber, facing the Seed
-		b.set(3, 1, 5, "seedcity:card_reader");
+		b.set(3, 2, 5, "seedcity:card_reader");
 		// the bus gate in the east wall (docs/city-as-computer.md): the Core drives the select lane
 		// and the data lane through its own terminal blocks, and reads the return lane back
 		b.set(5, 1, 3, BlockSpec.of("seedcity:terminal", "facing", "east", "power", "0"));
@@ -194,7 +368,7 @@ public final class Cells {
 			b.set(c[0], 3, c[1], "minecraft:oak_fence");
 			b.set(c[0], 4, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
 		}
-		return b.kind("logic").truth("lanes")
+		return b.street().kind("logic").truth("lanes")
 				.port("sel_in", "in", NORTH, 3, 1, 0, 4)
 				.port("sel_out", "out", SOUTH, 3, 1, 6, 4)
 				.port("data_in", "in", NORTH, 2, 3, 0, 4)
@@ -231,6 +405,9 @@ public final class Cells {
 		CellBuilder b = new CellBuilder("ram_vault_" + k, 7, 6, 14);
 		b.fill(0, 0, 0, 6, 0, 13, STONE);
 		b.walls(0, 1, 0, 6, 1, 13, BRICK);
+		// the long sides are windows: the decoder snake and the relays run right behind them, and a
+		// solid wall there would carry a neighbour's stray output straight into the circuit
+		b.fill(0, 1, 1, 0, 1, 12, GLASS).fill(6, 1, 1, 6, 1, 12, GLASS);
 		b.fill(0, 2, 0, 6, 2, 13, MEZZ);
 		b.walls(0, 3, 0, 6, 3, 13, GLASS);
 		b.walls(0, 4, 0, 6, 4, 13, BRICK);
@@ -367,7 +544,7 @@ public final class Cells {
 		b.comparator(6, 3, 2, WEST, false);               // ret_in_e
 		b.comparator(5, 3, 2, WEST, false);               // into the merge block
 		b.set(3, 4, 6, "minecraft:air").set(3, 4, 4, "minecraft:air");
-		return b.kind("logic").truth("branch")
+		return b.street().kind("logic").truth("branch")
 				.port("sel_in", "in", NORTH, 3, 1, 0, 4)
 				.port("sel_out", "out", SOUTH, 3, 1, 6, 4)
 				.port("sel_out_e", "out", EAST, 6, 1, 3, 4)
@@ -396,7 +573,7 @@ public final class Cells {
 		b.fill(1, 3, 0, 1, 3, 1, BRICK).fill(5, 3, 0, 5, 3, 1, BRICK);
 		b.fill(2, 4, 0, 4, 4, 1, GLASS);
 		b.fill(2, 3, 3, 4, 3, 3, BRICK).set(3, 3, 4, BRICK).set(3, 4, 3, BlockSpec.of("minecraft:lantern", "hanging", "false"));
-		return b.kind("logic").truth("loopback")
+		return b.street().kind("logic").truth("loopback")
 				.port("sel_in", "in", NORTH, 3, 1, 0, 4)
 				.port("data_in", "in", NORTH, 2, 3, 0, 4)
 				.port("ret_out", "out", NORTH, 4, 3, 0, 4)
@@ -417,7 +594,7 @@ public final class Cells {
 		b.set(2, 1, 3, BRICK).set(4, 1, 3, BRICK).set(3, 1, 2, BRICK).set(3, 1, 4, BRICK);
 		b.set(3, 1, 3, BlockSpec.of("minecraft:water", "level", "0"));
 		b.set(3, 2, 3, "minecraft:stone_brick_wall").set(3, 3, 3, BlockSpec.of("minecraft:lantern", "hanging", "false"));
-		return b.kind("decor").truth("none")
+		return b.street().kind("decor").truth("none")
 				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 2).weight("ram", 1).weight("storage", 1)
 				.cost(0, 40, 8);
 	}
@@ -430,7 +607,7 @@ public final class Cells {
 		b.walls(1, 1, 1, 5, 1, 5, "minecraft:stone_brick_slab");
 		b.set(3, 1, 5, BlockSpec.of("minecraft:daylight_detector", "inverted", "false", "power", "0"));
 		b.set(3, 1, 1, "minecraft:air").set(1, 1, 3, "minecraft:air").set(5, 1, 3, "minecraft:air");
-		return b.kind("sensor").truth("sensor")
+		return b.street().kind("sensor").truth("sensor")
 				.port("out", "out", SOUTH, 3, 1, 6, 4)
 				.weight("core", 0).weight("residential", 1).weight("forge", 0).weight("plaza", 2).weight("ram", 0).weight("storage", 0)
 				.cost(4, 40, 0);
@@ -444,7 +621,7 @@ public final class Cells {
 			b.dust(3, 1, z);
 		}
 		b.repeater(3, 1, 6, SOUTH, 1);
-		return b.kind("logic").truth("passthrough")
+		return b.street().kind("logic").truth("passthrough")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
 				.fault(3, 1, 3)
@@ -465,7 +642,7 @@ public final class Cells {
 		b.repeater(0, 1, 3, WEST, 1);
 		b.repeater(6, 1, 3, EAST, 1);
 		b.repeater(3, 1, 6, SOUTH, 1);
-		return b.kind("logic").truth("passthrough")
+		return b.street().kind("logic").truth("passthrough")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.port("out_s", "out", SOUTH, 3, 1, 6, 1)
 				.port("out_w", "out", WEST, 0, 1, 3, 1)
@@ -524,7 +701,7 @@ public final class Cells {
 			b.dust(3, 1, z);
 		}
 		b.repeater(3, 1, 6, SOUTH, 1);
-		return b.kind("logic").truth("passthrough")
+		return b.street().kind("logic").truth("passthrough")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
 				.fault(3, 1, 3)
@@ -561,7 +738,7 @@ public final class Cells {
 		}
 		b.dust(2, 7, 6).dust(3, 7, 6).dust(4, 7, 6);            // along the roof to the pistons' blocks
 		lanternPosts(b, 7);
-		return b.kind("actuator").truth("actuator")
+		return b.street().door(NORTH, SOUTH).kind("actuator").truth("actuator")
 				.port("gate", "in", WEST, 0, 1, 0, 4)
 				.weight("core", 3).weight("residential", 1).weight("forge", 0).weight("plaza", 2).weight("ram", 0).weight("storage", 1)
 				.cost(24, 200, 12);
@@ -586,7 +763,7 @@ public final class Cells {
 		b.set(3, 2, 6, GRATE);
 		b.set(3, 2, 2, "minecraft:stone_brick_wall").set(3, 3, 2, BlockSpec.of("minecraft:lantern", "hanging", "false"));
 		lanternPosts(b, 2);
-		return b.kind("sensor").truth("sensor")
+		return b.street().door(NORTH, SOUTH).kind("sensor").truth("sensor")
 				.port("out", "out", SOUTH, 3, 1, 6, 4)
 				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 4).weight("ram", 0).weight("storage", 1)
 				.cost(8, 60, 2);
@@ -604,7 +781,7 @@ public final class Cells {
 		for (int z = 0; z <= 6; z++) {
 			b.comparator(3, 1, z, SOUTH, false);
 		}
-		return b.kind("logic").truth("passthrough")
+		return b.street().kind("logic").truth("passthrough")
 				.port("in", "in", NORTH, 3, 1, 0, 4)
 				.port("out", "out", SOUTH, 3, 1, 6, 4)
 				.fault(3, 1, 3)
@@ -627,7 +804,7 @@ public final class Cells {
 		b.set(3, 2, 1, PAVING);
 		b.lamp(3, 2, 2);
 		lanternPosts(b, 2);
-		return b.kind("logic").truth("not")
+		return b.street().kind("logic").truth("not")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
 				.weight("core", 1).weight("residential", 2).weight("forge", 6).weight("plaza", 1).weight("ram", 1).weight("storage", 0)
@@ -744,7 +921,7 @@ public final class Cells {
 		b.fill(2, 20, 1, 4, 20, 3, "minecraft:stone_brick_slab");
 		b.set(3, 20, 2, "minecraft:glowstone");
 		// Zero weights: the city has one clock, placed by the planner next to the core.
-		return b.kind("logic").truth("clock")
+		return b.door(NORTH).kind("logic").truth("clock")
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
 				.weight("core", 0).weight("residential", 0).weight("forge", 0).weight("plaza", 0)
 				.cost(60, 400, 0);
@@ -782,9 +959,10 @@ public final class Cells {
 			b.set(c[0], 3, c[1], "minecraft:oak_fence");
 			b.set(c[0], 4, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
 		}
-		return b.kind("actuator").truth("actuator")
+		// a pond bridge for plazas only: bridges over real water are the river bridge's job
+		return b.street().door(NORTH, SOUTH).kind("actuator").truth("actuator")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
-				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 4).weight("ram", 0).weight("storage", 1)
+				.weight("core", 0).weight("residential", 0).weight("forge", 0).weight("plaza", 2).weight("ram", 0).weight("storage", 0)
 				.cost(10, 90, 24);
 	}
 
@@ -811,7 +989,7 @@ public final class Cells {
 		b.set(2, 7, 5, "minecraft:oak_fence");
 		b.set(2, 6, 5, BlockSpec.of("minecraft:chain", "axis", "y"));
 		b.facing(2, 5, 5, "minecraft:barrel", UP);
-		return b.kind("storage").truth("none")
+		return b.door(NORTH).kind("storage").truth("none")
 				.weight("core", 2).weight("residential", 1).weight("forge", 1).weight("plaza", 1).weight("ram", 0).weight("storage", 8)
 				.cost(0, 100, 60);
 	}

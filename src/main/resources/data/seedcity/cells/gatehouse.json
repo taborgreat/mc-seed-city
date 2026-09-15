@@ -8,5 +8,7 @@
   "truth": "actuator",
   "weights": { "core": 3, "residential": 1, "forge": 0, "plaza": 2, "ram": 0, "storage": 1 },
   "cost": { "redstone": 24, "stone": 200, "wood": 12 },
+  "street": true,
+  "doors": ["north", "south"],
   "setpiece": true
 }

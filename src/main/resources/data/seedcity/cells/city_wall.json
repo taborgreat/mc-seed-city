@@ -1,0 +1,11 @@
+{
+  "id": "seedcity:city_wall",
+  "kind": "decor",
+  "size": [7, 6, 7],
+  "ports": [],
+  "truth": "none",
+  "weights": { "core": 1, "residential": 1, "forge": 1, "plaza": 1, "ram": 1, "storage": 1 },
+  "cost": { "redstone": 0, "stone": 160, "wood": 0 },
+  "backs": ["south"],
+  "setpiece": true
+}

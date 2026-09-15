@@ -10,5 +10,6 @@
   "truth": "loopback",
   "weights": { "core": 2, "residential": 1, "forge": 2, "plaza": 1, "ram": 4, "storage": 1 },
   "cost": { "redstone": 12, "stone": 60, "wood": 4 },
+  "street": true,
   "setpiece": false
 }

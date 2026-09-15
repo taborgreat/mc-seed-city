@@ -49,6 +49,32 @@ public final class CityGrowthTests {
 		}
 	}
 
+	/** The two axes through the Core are avenues: only street cells stand on them (the forced core and clock aside). */
+	@GameTest(structure = "seedcity:arena", maxTicks = 40)
+	public void avenuesAreStreets(GameTestHelper helper) {
+		SeedCityConfig cfg = new SeedCityConfig();
+		cfg.maxRadiusSlots = 4;
+		cfg.citySeedOverride = 0x5EEDC17DL;
+		java.util.regex.Pattern line = java.util.regex.Pattern.compile("\\((-?\\d+),(-?\\d+)\\) \\w+ ([a-z_0-9]+)/");
+		int onAvenue = 0;
+		for (String s : CityState.previewPlan(0, 40, cfg)) {
+			java.util.regex.Matcher m = line.matcher(s);
+			if (!m.find()) {
+				continue;
+			}
+			CityState.SlotKey k = new CityState.SlotKey(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
+			String cell = m.group(3);
+			if (!CityState.avenue(k) || cell.equals("core") || cell.equals("clock_tower")) {
+				continue;
+			}
+			onAvenue++;
+			boolean street = net.tabor.seedcity.cell.CellLibrary.get(SeedCity.id(cell)).map(c -> c.definition().street()).orElse(false);
+			helper.assertTrue(street, cell + " at " + k + " is on an avenue but is not a street: " + s);
+		}
+		helper.assertTrue(onAvenue >= 4, "the plan should reach the avenues, saw " + onAvenue);
+		helper.succeed();
+	}
+
 	@GameTest(structure = BOAT, maxTicks = 9000)
 	public void seedGrowsCityBoat(GameTestHelper helper) {
 		buildPlatform(helper);

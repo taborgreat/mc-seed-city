@@ -75,3 +75,14 @@ start, so the first Collector is out within a minute and growth is paced by supp
   (`PlayerBlocks`). Builders will not plan over them and Collectors will not mine them, so the
   city cannot eat a base. Break the block and the mark goes with it.
 - **Seed destroyed**: growth, repair and supply freeze; what runs keeps running.
+
+## Ground level (2026-09-15)
+
+Every cell has its local y=1 at ground level: the paving, the wire in its groove, the doorway.
+A slot's origin is therefore one below the lowest ground inside it (or a neighbour's level within
+`terrainStep`, so streets continue), and whatever ground stands higher inside the slot is dug
+away by the site work. A street is cut into a hillside rather than raised on a wall above it.
+The Core origin is the Seed minus two; the Seed stands on the chamber floor. The apron banks
+earth down from the paving on open sides where the land outside is lower; on level ground it
+places nothing. Cells with structure-void columns (the garden lane) leave those columns to the
+land: no digging, no foundation, no repair.

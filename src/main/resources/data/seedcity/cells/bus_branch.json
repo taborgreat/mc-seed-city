@@ -16,5 +16,6 @@
   "truth": "branch",
   "weights": { "core": 3, "residential": 1, "forge": 2, "plaza": 1, "ram": 5, "storage": 1 },
   "cost": { "redstone": 60, "stone": 120, "wood": 8 },
+  "street": true,
   "setpiece": false
 }

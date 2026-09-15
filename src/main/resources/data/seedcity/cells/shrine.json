@@ -1,0 +1,13 @@
+{
+  "id": "seedcity:shrine",
+  "kind": "actuator",
+  "size": [7, 7, 7],
+  "ports": [
+    { "name": "in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 4 }
+  ],
+  "truth": "actuator",
+  "weights": { "core": 1, "residential": 2, "forge": 0, "plaza": 3, "ram": 1, "storage": 1 },
+  "cost": { "redstone": 16, "stone": 140, "wood": 0 },
+  "doors": ["north"],
+  "setpiece": true
+}

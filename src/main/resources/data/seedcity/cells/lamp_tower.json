@@ -1,0 +1,12 @@
+{
+  "id": "seedcity:lamp_tower",
+  "kind": "actuator",
+  "size": [7, 18, 7],
+  "ports": [
+    { "name": "in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 4 }
+  ],
+  "truth": "actuator",
+  "weights": { "core": 2, "residential": 2, "forge": 1, "plaza": 3, "ram": 2, "storage": 2 },
+  "cost": { "redstone": 60, "stone": 120, "wood": 0 },
+  "setpiece": true
+}

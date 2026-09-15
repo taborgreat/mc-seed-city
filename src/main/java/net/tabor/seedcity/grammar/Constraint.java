@@ -15,7 +15,29 @@ import java.util.List;
  * @param side   the face, pointing toward the neighbour
  * @param facing the neighbour ports on that face
  */
-public record Constraint(int offset, Direction side, List<Facing> facing) {
+public record Constraint(int offset, Direction side, List<Facing> facing, boolean street, java.util.Set<Integer> sensitive) {
+	/** A neighbour that is not a street (or a wall). */
+	public Constraint(int offset, Direction side, List<Facing> facing) {
+		this(offset, side, facing, false, java.util.Set.of());
+	}
+
+	public Constraint(int offset, Direction side, List<Facing> facing, boolean street) {
+		this(offset, side, facing, street, java.util.Set.of());
+	}
+
+	/** Key for a position on a shared face: where along the edge, how high. */
+	public static int at(int along, int y) {
+		return along * 256 + y;
+	}
+
+	/**
+	 * True when the neighbour's wall at (along, y) has wiring right behind it: an output pointed
+	 * there would power the wall block and leak into the neighbour's circuit.
+	 */
+	public boolean sensitiveAt(int along, int y) {
+		return sensitive.contains(at(along, y));
+	}
+
 	/**
 	 * A neighbour port as seen from our side of the shared edge.
 	 *
@@ -32,6 +54,7 @@ public record Constraint(int offset, Direction side, List<Facing> facing) {
 
 	public Constraint {
 		facing = List.copyOf(facing);
+		sensitive = java.util.Set.copyOf(sensitive);
 	}
 
 	public static Constraint wall(int offset, Direction side) {

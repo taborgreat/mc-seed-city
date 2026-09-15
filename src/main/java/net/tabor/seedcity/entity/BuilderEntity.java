@@ -98,7 +98,7 @@ public final class BuilderEntity extends FlyingCityMob {
 			return InteractionResult.CONSUME;
 		}
 		BlockPos feet = player.blockPosition();
-		Placement p = new Placement(cell.get(), feet.offset(-3, -1, -3), Rotation.NONE);
+		Placement p = new Placement(cell.get(), feet.offset(-3, -2, -3), Rotation.NONE);   // local y=1 at the player's feet level
 		String result = acceptBlueprint(server, p);
 		if (result == null) {
 			stack.shrink(1);

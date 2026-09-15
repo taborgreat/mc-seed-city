@@ -58,6 +58,16 @@ public final class CellVerifyTests {
 	}
 
 	@GameTest(structure = BOAT, maxTicks = 2400)
+	public void lampTower(GameTestHelper helper) {
+		verifyCellAt(helper, "lamp_tower", Rotation.NONE, new BlockPos(4, 1, 4));
+	}
+
+	@GameTest(structure = BOAT, maxTicks = 2400)
+	public void decoderPlaza(GameTestHelper helper) {
+		verifyCellAt(helper, "decoder_plaza", Rotation.NONE, new BlockPos(4, 1, 4));
+	}
+
+	@GameTest(structure = BOAT, maxTicks = 2400)
 	public void ramVault1(GameTestHelper helper) {
 		verifyCellAt(helper, "ram_vault_1", Rotation.NONE, new BlockPos(4, 1, 4));
 	}
@@ -70,6 +80,26 @@ public final class CellVerifyTests {
 	@GameTest(structure = BOAT, maxTicks = 2400)
 	public void ramVault1Rotated(GameTestHelper helper) {
 		verifyCellAt(helper, "ram_vault_1", Rotation.COUNTERCLOCKWISE_90, new BlockPos(4, 1, 4));
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void shrine(GameTestHelper helper) {
+		verifyCell(helper, "shrine", Rotation.NONE);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void cityWall(GameTestHelper helper) {
+		verifyCell(helper, "city_wall", Rotation.NONE);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void cityWallCorner(GameTestHelper helper) {
+		verifyCell(helper, "city_wall_corner", Rotation.CLOCKWISE_90);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void riverBridge(GameTestHelper helper) {
+		verifyCell(helper, "river_bridge", Rotation.NONE);
 	}
 
 	@GameTest(structure = ARENA, maxTicks = BUDGET)

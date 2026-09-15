@@ -371,7 +371,7 @@ public final class CityState {
 	}
 
 	public BlockPos coreOrigin() {
-		return seedPos.offset(-3, -1, -3);
+		return seedPos.offset(-3, -2, -3);   // the Seed sits on the Core's floor at local (3,2,3); local y=1 is ground level
 	}
 
 	public BlockPos slotOrigin(SlotKey k) {
@@ -838,7 +838,11 @@ public final class CityState {
 					return false;
 				}
 				for (int y = box.minY() + 1; y <= box.maxY(); y++) {
-					BlockState st = level.getBlockState(new BlockPos(x, y, z));
+					BlockPos at = new BlockPos(x, y, z);
+					BlockState st = level.getBlockState(at);
+					if (y == box.minY() + 1 && Terrain.isGround(level, at, st) && !PlayerBlocks.placedByPlayer(level, at)) {
+						continue;   // the surface row: the cell's paving replaces it
+					}
 					if (!(st.isAir() || st.canBeReplaced())) {
 						return false;
 					}
@@ -1136,10 +1140,63 @@ public final class CityState {
 					facing.add(new Constraint.Facing(wp.port(), along, wp.pos().getY() - y, wp.port().dir() == PortDir.OUT && live.contains(n.key),
 						CellLibrary.get(n.cell).map(cl -> cl.definition().kind()).orElse(null)));
 				}
-				out.put(face, new Constraint(offset, side, facing));   // a level step leaves nothing meeting: a wall in effect
+				out.put(face, new Constraint(offset, side, facing, isStreet(n), sensitiveFace(n, c, side, o, y)));   // a level step leaves nothing meeting: a wall in effect
 			}
 		}
 		return Optional.of(out);
+	}
+
+	/**
+	 * The neighbour's wall positions on the face toward slot {@code c} that have wiring behind
+	 * them, keyed as {@link Constraint#at} in our slot's frame (origin {@code o}, floor {@code y}).
+	 * An output of ours pointed there would leak into the neighbour.
+	 */
+	private Set<Integer> sensitiveFace(Slot n, SlotKey c, Direction side, BlockPos o, int y) {
+		Optional<Placement> p = placement(n);
+		if (p.isEmpty()) {
+			return Set.of();
+		}
+		Map<BlockPos, net.minecraft.world.level.block.state.BlockState> world = new HashMap<>();
+		for (Cell.CellBlock b : p.get().cell().blocks(p.get().rotation())) {
+			world.put(p.get().origin().offset(b.pos()), b.state());
+		}
+		Set<Integer> out = new HashSet<>();
+		int faceX = side == Direction.WEST ? o.getX() - 1 : side == Direction.EAST ? o.getX() + SLOT : -1;
+		int faceZ = side == Direction.NORTH ? o.getZ() - 1 : side == Direction.SOUTH ? o.getZ() + SLOT : -1;
+		for (Map.Entry<BlockPos, net.minecraft.world.level.block.state.BlockState> e : world.entrySet()) {
+			BlockPos w = e.getKey();
+			boolean onFace = side.getAxis() == Direction.Axis.X ? w.getX() == faceX && w.getZ() >= o.getZ() && w.getZ() < o.getZ() + SLOT
+					: w.getZ() == faceZ && w.getX() >= o.getX() && w.getX() < o.getX() + SLOT;
+			if (!onFace || !e.getValue().canOcclude()) {
+				continue;
+			}
+			for (Direction d : Direction.values()) {
+				if (d == side.getOpposite()) {
+					continue;   // toward us
+				}
+				net.minecraft.world.level.block.state.BlockState inner = world.get(w.relative(d));
+				if (inner != null && Grammar.component(inner)) {
+					int along = side.getAxis() == Direction.Axis.Z ? w.getX() - o.getX() : w.getZ() - o.getZ();
+					out.add(Constraint.at(along, w.getY() - y));
+					break;
+				}
+			}
+		}
+		return out;
+	}
+
+	/** True when the slot holds a cell you can walk through (a street, lane, plaza, gate or bridge). */
+	private boolean isStreet(Slot s) {
+		return s != null && s.cell != null && CellLibrary.get(s.cell).map(c -> c.definition().street()).orElse(false);
+	}
+
+	/**
+	 * The avenues: the two axes through the Core. Only street cells stand on them, so there is
+	 * always a way to walk from the edge of the city to the Core, and the city reads as a cross of
+	 * streets with districts between (design doc 13: the Core is always reachable).
+	 */
+	public static boolean avenue(SlotKey k) {
+		return k.x() == 0 || k.z() == 0;
 	}
 
 	/** Slots whose signal traces back to the clock tower. */
@@ -1321,7 +1378,11 @@ public final class CityState {
 	}
 
 	/** How a slot sits on the land: its floor level, or why it cannot be built, or that the ground is not loaded yet. */
-	public record Fit(int y, String reason, boolean unloaded) {
+	public record Fit(int y, String reason, boolean unloaded, boolean wet) {
+		public Fit(int y, String reason, boolean unloaded) {
+			this(y, reason, unloaded, false);
+		}
+
 		public boolean ok() {
 			return reason == null && !unloaded;
 		}
@@ -1376,6 +1437,13 @@ public final class CityState {
 			return new Fit(0, "unloaded", true);
 		}
 		Terrain.Survey sv = Terrain.survey(level, x0, z0, SLOT, cfg.slopeLimit);
+		if (!sv.ok() && "water".equals(sv.reason())) {
+			// a river or a pond: only a bridge may stand here, at the water's level
+			Terrain.Survey wet = Terrain.surveyWet(level, x0, z0, SLOT, cfg.slopeLimit);
+			if (wet.ok()) {
+				sv = wet;
+			}
+		}
 		if (!sv.ok()) {
 			return new Fit(0, sv.reason(), false);
 		}
@@ -1383,8 +1451,12 @@ public final class CityState {
 		if (k.chebyshev() == 0) {
 			y = flat.getY();   // the Core sits where the Seed was placed
 		} else {
+			// a cell's local y=1 (its paving, its wire, its doorway) sits at ground level: the origin is one
+			// below the lowest ground in the slot, and higher ground inside the slot is dug away, so a
+			// street is cut into a hillside rather than raised on a wall above it
+			int own = sv.min() - 1;
 			Integer nb = neighbourLevel(k);
-			y = nb != null && Math.abs(sv.median() - nb) <= cfg.terrainStep ? nb : sv.median();
+			y = nb != null && Math.abs(own - nb) <= cfg.terrainStep ? nb : own;
 		}
 		if (y - sv.min() > cfg.foundationDepth) {
 			return new Fit(0, "drop", false);
@@ -1392,7 +1464,7 @@ public final class CityState {
 		if (!Terrain.volumeClear(level, x0, z0, SLOT, y, maxCellHeight(), seedPos)) {
 			return new Fit(0, "occupied", false);
 		}
-		return new Fit(y, null, false);
+		return new Fit(y, null, false, sv.wet());
 	}
 
 	/** Why a cell would or would not be planned at a slot right now: for `/seedcity fit` and tests. */
@@ -1499,14 +1571,35 @@ public final class CityState {
 				}
 			}
 			Optional<Goal> goal = haveActuator ? Optional.empty() : Optional.of(Goal.WANT_ACTUATOR);
-			FrontierSlot fs = new FrontierSlot(k.x(), k.z(), district(k), Set.copyOf(s.rejected));
+			// the perimeter: which sides of this slot face the world outside the city; the gate sites:
+			// the avenue slots just outside the Core (not the clock, not the bus gate) and where the
+			// avenues leave the city
+			Set<Direction> edges = new HashSet<>();
+			for (Direction d : SIDES) {
+				if (k.offset(d).chebyshev() > cfg.maxRadiusSlots) {
+					edges.add(d);
+				}
+			}
+			boolean gateSite = avenue(k) && ((k.chebyshev() == 1 && !(k.x() == 1 && k.z() == 0) && !(k.x() == 0 && k.z() == 1))
+					|| k.chebyshev() == cfg.maxRadiusSlots);
+			FrontierSlot fs = new FrontierSlot(k.x(), k.z(), district(k), Set.copyOf(s.rejected), edges, gateSite);
 			Map<Identifier, Integer> existing = new HashMap<>();
 			for (Slot o : slots.values()) {
 				if (o.occupies() && o.cell != null) {
 					existing.merge(o.cell, 1, Integer::sum);
 				}
 			}
-			Optional<Choice> choice = Grammar.choose(fs, ch -> room(k, ch.cell(), ch.rotation(), live, fitter, cfg), goal, wantedCells(), existing, rng, CellLibrary.all());
+			Function<Choice, Optional<Map<Grammar.Face, Constraint>>> roomFor = ch -> room(k, ch.cell(), ch.rotation(), live, fitter, cfg);
+			// water takes only bridges and land never does; an avenue takes streets first
+			boolean wet = fit.wet();
+			java.util.function.Predicate<Cell> footing = c -> c.definition().wet() == wet;
+			Optional<Choice> choice = Optional.empty();
+			if (avenue(k)) {
+				choice = Grammar.choose(fs, roomFor, goal, wantedCells(), existing, rng, CellLibrary.all(), c -> footing.test(c) && c.definition().street());
+			}
+			if (choice.isEmpty()) {
+				choice = Grammar.choose(fs, roomFor, goal, wantedCells(), existing, rng, CellLibrary.all(), footing);
+			}
 			if (choice.isEmpty()) {
 				s.status = SlotStatus.BLOCKED;
 				s.note = "no legal cell";
@@ -2175,12 +2268,14 @@ public final class CityState {
 		if (ambitious) {
 			for (Cell c : CellLibrary.all()) {
 				CellDefinition def = c.definition();
-				boolean growable = false;
+				int districts = 0;
 				for (String d : List.of("core", "residential", "forge", "plaza", "ram", "storage")) {
-					growable |= def.weight(d) > 0;
+					if (def.weight(d) > 0) {
+						districts++;
+					}
 				}
-				if (!growable) {
-					continue;
+				if (districts < 3 || def.wet()) {
+					continue;   // a dream asks only for cells most of the city can hold: not a bridge that needs a river or a plaza
 				}
 				int next = counts.getOrDefault(c.id().getPath(), 0) + 1;
 				if (def.kind() == CellKind.ACTUATOR && !def.inputs().isEmpty()) {
