@@ -1,0 +1,14 @@
+{
+  "id": "seedcity:ram_vault_1",
+  "kind": "logic",
+  "size": [7, 6, 14],
+  "ports": [
+    { "name": "sel_in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 4 },
+    { "name": "data_in", "dir": "in", "face": "north", "pos": [2, 3, 0], "bits": 4 },
+    { "name": "ret_out", "dir": "out", "face": "north", "pos": [4, 3, 0], "bits": 4 }
+  ],
+  "truth": "ram_1_6",
+  "weights": { "core": 6, "residential": 0, "forge": 0, "plaza": 0, "ram": 8, "storage": 0 },
+  "cost": { "redstone": 80, "stone": 260, "wood": 0 },
+  "setpiece": true
+}

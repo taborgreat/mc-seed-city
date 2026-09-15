@@ -62,10 +62,17 @@ dated line to `DECISIONS.md`.
   the box is clear (above the Core roof), or they never find a path. Wardens repair by blueprint comparison (`verify.Integrity`), then
   re-queue port verification. Faults are planned slots built minus their `fault` block.
   Config is per city: always read it through `CityState.cfg()`, never the global in city code.
-- Cards: `card.CardParser` (pure, tested), `core.Executor` (resolve + run: binds registers by
-  ordinal, ALU ops to cells, ports by `type.N.port`; one instruction per clock beat; drives
-  ports via Core terminals), `core.CardReaderBlock`, `core.ReaderWall`. Language reference in
-  `docs/cards.md`. Twelve ops, no more.
+- Cards: `card.CardParser` (pure, tested), `core.Executor` (resolve + run: binds R0/R1 to RAM
+  vaults on the bus by read address, ALU ops to cells, ports by `type.N.port`; one instruction
+  per clock beat; registers are read and written only over the Core's bus gate, ALU and OUT/IN
+  ports via Core terminals or Couriers), `core.CardReaderBlock`, `core.ReaderWall`. Language
+  reference in `docs/cards.md`. Twelve ops, no more.
+- The bus (docs/cells.md, "The bus"): three comparator lanes (select y=1 x=3, data y=3 x=2,
+  return y=3 x=4) on cells `bus_street`, `bus_branch`, `bus_end` and the two-slot `ram_vault_1`
+  and `ram_vault_2` (7x6x14, read at select k, write at 6 / 8). Cells may span several slots
+  (`Slot.anchor`, `coveredSlots`, `Grammar.choose` with a room function). Bus ports (`sel_*`,
+  `data_*`, `ret_*`) only mate bus ports, and the grammar grows a bus cell only where a live
+  lane arrives, so every bus starts at the Core's east gate. Two registers for now.
 - Districts are angular sectors from the city seed (`CityState.district`); cell weights per
   district live in `cellgen/Cells.java` and are the tuning knob for what grows where. Couriers
   (`entity.CourierEntity`) carry OUT/IN outside the core district via `CityState.post`; Core
@@ -78,6 +85,8 @@ dated line to `DECISIONS.md`.
   compose cards, `CityState.dream` runs them: a fresh city dreams at once, ambitiously when it
   has nothing to run on (a plan the builders grow toward while the previous program keeps
   running), so growth follows the city's own programs. A player card overrides all of it. See `docs/terrain.md`, `docs/fragments.md`.
-- Phases 0 to 5 done (2026-09-13/14). Next: bus streets with taps and select lanes (deferred
-  from Phase 4), the Foundry and compound cells from `docs/language-of-growth.md`, more cells
-  and fragments, and play-testing on real terrain.
+- Phases 0 to 5 done (2026-09-13/14), and the bus with two RAM vaults on top of them. Next:
+  the visual pass Tabor asked for (street channels meeting bridges, bridges that lift more than
+  one block, logic visible in RAM and Storage), more addressable vaults with readouts and
+  Sentinels, then the Foundry and compound cells from `docs/language-of-growth.md`, and
+  play-testing on real terrain.

@@ -31,11 +31,12 @@ import java.util.Set;
 public final class ComputerTests {
 	private static final String BOAT = "seedcity:boat";
 	private static final int PLATFORM = 42;
-	private static final BlockPos SEED = new BlockPos(24, 2, 24);
+	private static final BlockPos SEED = new BlockPos(20, 2, 24);
 	private static final CityState.SlotKey BRIDGE = new CityState.SlotKey(1, 2);
 
 	private static SeedCityConfig quietConfig() {
 		SeedCityConfig c = new SeedCityConfig();
+		c.unlimitedMaterials = true;   // not a supply test
 		c.dreamAtStart = false;
 		c.blocksPerSecond = 40;
 		c.maxBuilders = 1;
@@ -56,9 +57,8 @@ public final class ComputerTests {
 	}
 
 	private static void platform(GameTestHelper helper) {
-		int start = SEED.getX() - PLATFORM / 2;
-		for (int x = start; x < start + PLATFORM; x++) {
-			for (int z = start; z < start + PLATFORM; z++) {
+		for (int x = 0; x < 46; x++) {
+			for (int z = 3; z < 45; z++) {
 				helper.setBlock(new BlockPos(x, 0, z), Blocks.SMOOTH_STONE);
 				helper.setBlock(new BlockPos(x, 1, z), Blocks.SMOOTH_STONE);
 			}
@@ -126,10 +126,24 @@ public final class ComputerTests {
 			if (helper.getTick() % 400 == 0) {
 				SeedCity.LOGGER.info("forge test tick {}: {}", helper.getTick(), c.summary());
 			}
+			if (helper.getTick() % 2000 == 0 || (helper.getTick() < 2000 && helper.getTick() % 200 == 0)) {
+				SeedCity.LOGGER.info("forge test slots: {}", c.describeSlots());
+			}
+			if (helper.getTick() == 20 || helper.getTick() == 200) {
+				SeedCity.LOGGER.info("forge test explain: {}", c.explain(level, new CityState.SlotKey(1, 0), SeedCity.id("ram_vault_1"), Rotation.COUNTERCLOCKWISE_90));
+				SeedCity.LOGGER.info("forge test explain: {}", c.explain(level, new CityState.SlotKey(1, 0), SeedCity.id("bus_branch"), Rotation.COUNTERCLOCKWISE_90));
+			}
+			if (helper.getTick() >= 300 && helper.getTick() <= 1500 && helper.getTick() % 100 == 0) {
+				for (CityState.SlotKey k : List.of(new CityState.SlotKey(2, 0), new CityState.SlotKey(1, -1), new CityState.SlotKey(1, 1))) {
+					SeedCity.LOGGER.info("forge test explain: {}", c.explain(level, k, SeedCity.id("ram_vault_1"), Rotation.COUNTERCLOCKWISE_90));
+					SeedCity.LOGGER.info("forge test explain: {}", c.explain(level, k, SeedCity.id("ram_vault_1"), Rotation.CLOCKWISE_180));
+					SeedCity.LOGGER.info("forge test explain: {}", c.explain(level, k, SeedCity.id("bus_branch"), Rotation.COUNTERCLOCKWISE_90));
+				}
+			}
 			if (!c.programLive()) {
 				return;
 			}
-			for (String type : List.of("alu_sub", "alu_not", "register_block")) {
+			for (String type : List.of("alu_sub", "alu_not", "ram_vault_1")) {
 				List<CityState.Slot> built = c.builtOfType(type);
 				helper.assertFalse(built.isEmpty(), type + " should be built before the program goes live");
 			}
@@ -138,10 +152,11 @@ public final class ComputerTests {
 					helper.assertValueEqual(c.district(s.key), "forge", "district of " + type + " at " + s.key);
 				}
 			}
-			for (CityState.Slot s : c.builtOfType("register_block")) {
+			for (CityState.Slot s : c.builtOfType("ram_vault_1")) {
 				String d = c.district(s.key);
-				helper.assertTrue(d.equals("ram") || d.equals("core"), "register at " + s.key + " should be in RAM or next to the core, was " + d);
+				helper.assertTrue(d.equals("ram") || d.equals("core"), "vault at " + s.key + " should be in RAM or next to the core, was " + d);
 			}
+			helper.assertTrue(!c.busVaults().isEmpty(), "the vault should be reachable on the bus: " + c.describeSlots());
 			SeedCity.LOGGER.info("forge test live at tick {}: {}", helper.getTick(), c.summary());
 			helper.succeed();
 		});
@@ -200,7 +215,8 @@ public final class ComputerTests {
 		ServerLevel level = helper.getLevel();
 		CityState.SlotKey vaultKey = new CityState.SlotKey(-1, 0);
 		c.adopt(level, vaultKey, SeedCity.id("vault"), Rotation.NONE, false);
-		c.adopt(level, new CityState.SlotKey(1, 0), SeedCity.id("register_block"), Rotation.NONE, false);
+		c.adopt(level, new CityState.SlotKey(1, 0), SeedCity.id("bus_street"), Rotation.COUNTERCLOCKWISE_90, false);
+		c.adopt(level, new CityState.SlotKey(2, 0), SeedCity.id("ram_vault_1"), Rotation.COUNTERCLOCKWISE_90, false);
 		Placement v = c.placement(vaultKey).orElseThrow();
 		BlockPos door = v.origin().offset(new BlockPos(3, 1, 2).rotate(v.rotation()));
 		helper.assertTrue(level.getBlockState(door).hasProperty(BlockStateProperties.OPEN), "iron door at " + door);

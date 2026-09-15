@@ -70,7 +70,8 @@ public final class BuilderEntity extends FlyingCityMob {
 	}
 
 	public String status() {
-		return phase + (task == null ? "" : " " + task.placement() + " " + (int) (task.progress() * 100) + "%");
+		return phase + (task == null ? "" : " " + task.placement() + " " + (int) (task.progress() * 100) + "%")
+				+ (target == null ? "" : " -> " + (int) target.x + "," + (int) target.y + "," + (int) target.z + " t=" + travelTicks);
 	}
 
 	/**
@@ -192,13 +193,36 @@ public final class BuilderEntity extends FlyingCityMob {
 		target = to;
 		travelTicks = 0;
 		timer = 0;
+		stuckFrom = null;
 	}
+
+	/** Where the Builder was at the last stuck check while travelling; null until the first. */
+	private Vec3 stuckFrom;
 
 	/** Flies toward the target; true when close enough. Gives up after the configured time. */
 	private boolean travel(SeedCityConfig cfg) {
 		travelTicks++;
 		if (flyToward(target, cfg.builderSpeed, 2.5)) {
 			return true;
+		}
+		if (travelTicks > 60) {
+			// a roof, a canopy or a test ceiling can keep the exact point out of reach: the column is enough
+			double dx = getX() - target.x;
+			double dz = getZ() - target.z;
+			if (dx * dx + dz * dz < 25 && Math.abs(getY() - target.y) < 8) {
+				getNavigation().stop();
+				return true;
+			}
+		}
+		if (travelTicks % 100 == 0) {
+			if (stuckFrom != null && position().distanceToSqr(stuckFrom) < 1.0) {
+				// walled in: a chamber closed over it while it built, or a room with no way out. Blink to the site.
+				teleportTo(target.x, target.y, target.z);
+				getNavigation().stop();
+				stuckFrom = null;
+				return true;
+			}
+			stuckFrom = position();
 		}
 		if (travelTicks > cfg.abandonSeconds * 20) {
 			dropTask((ServerLevel) level());

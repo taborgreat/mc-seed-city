@@ -95,8 +95,14 @@ public final class SeedCityCommands {
 								.suggests((c, b) -> SharedSuggestionProvider.suggest(net.tabor.seedcity.card.CardLibrary.names(), b))
 								.executes(c -> insert(c.getSource(), com.mojang.brigadier.arguments.StringArgumentType.getString(c, "name")))))
 				.then(Commands.literal("eject").executes(c -> eject(c.getSource())))
+				.then(Commands.literal("manual").executes(c -> manual(c.getSource())))
 				.then(Commands.literal("dream").executes(c -> dream(c.getSource())))
-				.then(Commands.literal("fit").executes(c -> fit(c.getSource())))
+				.then(Commands.literal("fit").executes(c -> fit(c.getSource()))
+						.then(Commands.argument("cell", IdentifierArgument.id())
+								.suggests((c, b) -> SharedSuggestionProvider.suggestResource(CellLibrary.ids(), b))
+								.executes(c -> explain(c, Rotation.NONE))
+								.then(Commands.argument("rotation", IntegerArgumentType.integer(0, 3))
+										.executes(c -> explain(c, rotation(c))))))
 				.then(Commands.literal("labels").executes(c -> labels(c.getSource())))
 				.then(Commands.literal("reader").executes(c -> reader(c.getSource())))
 				.then(Commands.literal("blueprint")
@@ -319,21 +325,17 @@ public final class SeedCityCommands {
 				continue;
 			}
 			nodes++;
-			for (Port port : p.get().cell().ports(s.rotation)) {
+			for (Placement.WorldPort wp : p.get().ports()) {
+				Port port = wp.port();
 				if (port.dir() != net.tabor.seedcity.cell.PortDir.OUT) {
 					continue;
 				}
 				String from = s.key + " " + s.cell.getPath() + "." + port.name();
-				CityState.SlotKey nk = s.key.offset(port.face());
-				Optional<CityState.Slot> n = c.slot(nk);
-				Port theirs = null;
-				if (n.isPresent() && n.get().cell != null && c.placement(n.get()).isPresent()) {
-					theirs = net.tabor.seedcity.grammar.Grammar.portOn(c.placement(n.get()).get().cell().ports(n.get().rotation), port.face().getOpposite());
-				}
-				if (theirs != null && theirs.dir() == net.tabor.seedcity.cell.PortDir.IN) {
+				Optional<CityState.Meeting> m = c.meeting(wp);
+				if (m.isPresent() && m.get().port().port().dir() == net.tabor.seedcity.cell.PortDir.IN) {
 					edges++;
 					String tag = clocked.contains(s.key) ? "  [clock]" : live.contains(s.key) ? "  [live]" : "  [dead]";
-					lines.add(from + " -> " + nk + " " + n.get().cell.getPath() + "." + theirs.name() + tag + (s.status == CityState.SlotStatus.FAULT ? " FAULT" : ""));
+					lines.add(from + " -> " + m.get().slot().key + " " + m.get().slot().cell.getPath() + "." + m.get().port().port().name() + tag + (s.status == CityState.SlotStatus.FAULT ? " FAULT" : ""));
 				} else {
 					deadEnds++;
 					lines.add(from + " -> (nothing)");
@@ -370,6 +372,47 @@ public final class SeedCityCommands {
 			player.drop(book, false);
 		}
 		source.sendSuccess(() -> Component.literal("Card '" + name + "'. Right-click the Card Reader in a Core with it."), false);
+		return 1;
+	}
+
+	/** The in-game reference: a written book that explains the city, the cards and the commands. */
+	private static final String[] MANUAL = {
+			"SEED CITY\n\nA city that is a computer. Plant a Seed; Builders raise a Core, a Clock Tower and streets of redstone around it. Every building is a verified circuit. The city runs a program you write in a book.",
+			"THE CORE\n\nThe chamber around the Seed. The Card Reader is on its south wall; the Reader wall text shows the program, the registers and errors. The bus leaves through the east wall.",
+			"THE CLOCK\n\nThe tall spire south of the Core. Its lamps climb with every beat. One instruction runs per beat. Break the tower and the program stops; Rectifiers rebuild what differs from the blueprint.",
+			"WRITING A CARD\n\nCraft a Book and Quill (book + feather + ink sac). Write one op per line. Sign it or leave it open, then right-click the Card Reader with it. Right-click the reader with an empty hand to eject.",
+			"OPS (values are 0..15)\n\nSET Rd X\nADD Rd X (max 15)\nSUB Rd X (min 0)\nAND Rd X (min)\nOR Rd X (max)\nNOT Rd (15-Rd)\nJMP label\nJZ Rd label\nWAIT n beats\nOUT port X\nIN Rd port\nNEED cell",
+			"EXAMPLE\n\nloop:\nSET R0 15\nOUT drawbridge.*.in R0\nWAIT 2\nSET R0 0\nOUT drawbridge.*.in R0\nWAIT 2\nJMP loop\n\nEvery drawbridge rises and falls with the beat.",
+			"PORTS\n\ndrawbridge.in is the first bridge, drawbridge.2.in the second, drawbridge.*.in all of them. OUT drives an input port, IN reads an output port. /seedcity list prints every cell and its ports.",
+			"WHAT YOU CAN CONTROL\n\ndrawbridge.in lifts a deck.\ngatehouse.gate drops a portcullis (any value above 0).\nvault.in opens the strongroom at exactly 15.\nSentinels wake with a vault's value.\n\nWHAT YOU CAN READ\n\ndaylight_plaza.out 0..15 by sun.\nfootfall_plaza.out who stands on the plates.",
+			"CARDS TO COPY\n\n/seedcity card curfew: gates shut at night.\n/seedcity card alarm: a foot on the plaza seals the gates.\n/seedcity card blink, countdown, daylight, hold_bridges.",
+			"REGISTERS\n\nR0 and R1 live in RAM vaults on the bus. A card that names a register the city lacks is accepted as a PLAN: the Builders grow a bus and a vault, then it goes live by itself. Watch the east gate of the Core.",
+			"THE BUS\n\nThree comparator lanes: select under the pavement, data and return on top under glass. A vault answers when the select lane says its address. Streets pass the lanes on, branches tap them sideways, an end loops data back.",
+			"ALU\n\nSUB, ADD, AND and NOT run through cells in the Forge district: a subtractor, a complement and a max. A card that needs them waits as a plan until the Forge has grown them.",
+			"DISTRICTS\n\nThe ring around the Seed is the core. Beyond it the city is cut into sectors: Forge (dark, compute), RAM (vaults and bus), Storage (warehouses), residential and plaza. Labels over each cell show its name and district.",
+			"MOBS\n\nBuilders build. Rectifiers patrol and repair. Couriers carry OUT and IN values to far districts. Collectors leave the city for wood, stone and redstone. Sentinels guard vaults, asleep at 0, hostile at 15. Rats scare creepers.",
+			"DREAMS\n\nA city with an empty reader writes its own card and runs it; a bigger one follows when it is idle. Its books are in the reader. Your card always wins; ejecting it hands the city back.",
+			"COMMANDS\n\n/seedcity card <name> example book\n/seedcity insert <name>\n/seedcity eject\n/seedcity reader\n/seedcity slots  /seedcity graph\n/seedcity fit <cell> [rot]\n/seedcity labels\n/seedcity dream\n/seedcity blueprint <cell>",
+			"BLUEPRINTS\n\n/seedcity blueprint <cell> gives an item. Right-click a Builder with it and it builds that cell where you stand, verified like any other. Free, off the grid, yours."
+	};
+
+	private static int manual(CommandSourceStack source) {
+		net.minecraft.server.level.ServerPlayer player = source.getPlayer();
+		if (player == null) {
+			source.sendFailure(Component.literal("Only players can hold books."));
+			return 0;
+		}
+		net.minecraft.world.item.ItemStack book = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.WRITTEN_BOOK);
+		List<net.minecraft.server.network.Filterable<Component>> pages = new ArrayList<>();
+		for (String page : MANUAL) {
+			pages.add(net.minecraft.server.network.Filterable.passThrough(Component.literal(page)));
+		}
+		book.set(net.minecraft.core.component.DataComponents.WRITTEN_BOOK_CONTENT,
+				new net.minecraft.world.item.component.WrittenBookContent(net.minecraft.server.network.Filterable.passThrough("Seed City Manual"), "Seed City", 0, pages, true));
+		if (!player.getInventory().add(book)) {
+			player.drop(book, false);
+		}
+		source.sendSuccess(() -> Component.literal("The Seed City manual. Open it like any book."), false);
 		return 1;
 	}
 
@@ -429,6 +472,24 @@ public final class SeedCityCommands {
 		CityState.Fit fit = c.fitSlot(level, k);
 		source.sendSuccess(() -> Component.literal("slot " + k + " {" + c.district(k) + "}: " + (fit.ok() ? "fits at y=" + fit.y() : fit.unloaded() ? "ground not loaded" : "unfit: " + fit.reason())
 				+ c.slot(k).map(s -> "; " + s).orElse("")), false);
+		return 1;
+	}
+
+	/** Why the planner would or would not put a cell where you stand: room, feeding lanes, legality, weight, wants. */
+	private static int explain(CommandContext<CommandSourceStack> c, Rotation rotation) {
+		CommandSourceStack source = c.getSource();
+		ServerLevel level = source.getLevel();
+		BlockPos at = BlockPos.containing(source.getPosition());
+		Optional<CityState> city = CityManager.get(level).nearest(at);
+		if (city.isEmpty()) {
+			source.sendFailure(Component.literal("No city in this dimension."));
+			return 0;
+		}
+		CityState cs = city.get();
+		BlockPos flat = cs.coreOrigin();
+		CityState.SlotKey k = new CityState.SlotKey(Math.floorDiv(at.getX() - flat.getX(), CityState.SLOT), Math.floorDiv(at.getZ() - flat.getZ(), CityState.SLOT));
+		String text = cs.explain(level, k, IdentifierArgument.getId(c, "cell"), rotation);
+		source.sendSuccess(() -> Component.literal(text), false);
 		return 1;
 	}
 

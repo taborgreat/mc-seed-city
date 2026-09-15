@@ -2,6 +2,7 @@ package net.tabor.seedcity.cellgen;
 
 import java.util.List;
 
+import static net.tabor.seedcity.cellgen.Dir.DOWN;
 import static net.tabor.seedcity.cellgen.Dir.EAST;
 import static net.tabor.seedcity.cellgen.Dir.NORTH;
 import static net.tabor.seedcity.cellgen.Dir.SOUTH;
@@ -32,7 +33,8 @@ public final class Cells {
 	public static List<CellBuilder> all() {
 		return List.of(busSegment(), inverter(), registerBlock(), clockTower(), drawbridge(), storageCell(),
 				core(), decorPlaza(), daylightPlaza(), wireSegment(), junction(),
-				aluSub(), aluNot(), aluOr(), vault());
+				aluSub(), aluNot(), aluOr(), vault(), busStreet(), busEnd(), busBranch(), ramVault(1), ramVault(2),
+				gardenLane(), gatehouse(), footfallPlaza());
 	}
 
 	/**
@@ -155,9 +157,251 @@ public final class Cells {
 				.set(3, 0, 2, "minecraft:chiseled_stone_bricks").set(3, 0, 4, "minecraft:chiseled_stone_bricks");
 		// the Card Reader: a slot on the south side of the chamber, facing the Seed
 		b.set(3, 1, 5, "seedcity:card_reader");
+		// the bus gate in the east wall (docs/city-as-computer.md): the Core drives the select lane
+		// and the data lane through its own terminal blocks, and reads the return lane back
+		b.set(5, 1, 3, BlockSpec.of("seedcity:terminal", "facing", "east", "power", "0"));
+		b.comparator(6, 1, 3, EAST, false);                         // sel_out
+		b.fill(5, 2, 2, 6, 2, 4, "minecraft:chiseled_stone_bricks");  // a ledge for the upper lanes
+		b.set(5, 3, 4, BlockSpec.of("seedcity:terminal", "facing", "east", "power", "0"));
+		b.comparator(6, 3, 4, EAST, false);                         // data_out
+		b.comparator(6, 3, 2, WEST, false);                         // ret_in
+		b.set(5, 3, 2, "minecraft:chiseled_stone_bricks");          // what came back, for the Core to read
 		return b.kind("core").truth("none")
+				.port("sel_out", "out", EAST, 6, 1, 3, 4)
+				.port("data_out", "out", EAST, 6, 3, 4, 4)
+				.port("ret_in", "in", EAST, 6, 3, 2, 4)
 				.weight("core", 0).weight("residential", 0).weight("forge", 0).weight("plaza", 0)
 				.cost(0, 40, 0);
+	}
+
+	/**
+	 * A bus street (docs/city-as-computer.md): three lanes of comparators. The select lane runs
+	 * under the pavement; the data lane out and the return lane back run on top under glass, so
+	 * a value can be watched travelling down the street. Every lane is lossless.
+	 */
+	static CellBuilder busStreet() {
+		CellBuilder b = shell("bus_street", 5);
+		b.fill(0, 1, 0, 6, 1, 6, BRICK);
+		b.fill(0, 2, 0, 6, 2, 6, "minecraft:polished_andesite");
+		for (int z = 0; z <= 6; z++) {
+			b.comparator(3, 1, z, SOUTH, false);     // select, southbound, under the street
+			b.comparator(2, 3, z, SOUTH, false);     // data, southbound
+			b.comparator(4, 3, z, NORTH, false);     // return, northbound
+		}
+		b.fill(1, 3, 0, 1, 3, 6, BRICK).fill(5, 3, 0, 5, 3, 6, BRICK);   // kerbs
+		b.fill(2, 4, 0, 2, 4, 6, GLASS).fill(4, 4, 0, 4, 4, 6, GLASS);
+		for (int[] c : new int[][] {{0, 0}, {6, 0}, {0, 6}, {6, 6}}) {
+			b.set(c[0], 3, c[1], "minecraft:oak_fence");
+			b.set(c[0], 4, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		}
+		return b.kind("logic").truth("lanes")
+				.port("sel_in", "in", NORTH, 3, 1, 0, 4)
+				.port("sel_out", "out", SOUTH, 3, 1, 6, 4)
+				.port("data_in", "in", NORTH, 2, 3, 0, 4)
+				.port("data_out", "out", SOUTH, 2, 3, 6, 4)
+				.port("ret_in", "in", SOUTH, 4, 3, 6, 4)
+				.port("ret_out", "out", NORTH, 4, 3, 0, 4)
+				.fault(3, 1, 3)
+				// a street crosses any district on its way to RAM, but prefers the core and the RAM sector
+				.weight("core", 4).weight("residential", 1).weight("forge", 3).weight("plaza", 1).weight("ram", 6).weight("storage", 1)
+				.cost(40, 80, 8).setpiece(false);
+	}
+
+	static final String MEZZ = "minecraft:polished_andesite";
+
+	/**
+	 * A RAM vault on the bus (docs/city-as-computer.md): 7 wide, 14 deep, two floors and a roof.
+	 * The bus ends here. Ground floor: the address decoder. The select value arrives as a
+	 * strongly powered block, a dust snake knocks one off per block, a repeater on the k-th dust
+	 * says "at least k", and two subtract comparators pick out exactly the vault's read address
+	 * (R) and exactly its write address (W). First floor: the data lane feeds a four-comparator
+	 * ring (the same latch as the register vault) through a gate that opens while W is high; the
+	 * ring value is read back onto the return lane through a gate that opens while R is high.
+	 * The gate signals climb through torches in the mezzanine, each torch inverting the block it
+	 * stands on, and NOT R crosses the first floor as a dust run at roof level.
+	 *
+	 * <p>Vault 1 reads at select 1 and writes at 6; vault 2 reads at 2 and writes at 8. The two
+	 * differ only in where their decoder sits along the snake.
+	 */
+	static CellBuilder ramVault(int k) {
+		int zT = k + 1;                                   // row of the read unit: reads at select zT-1
+		int zW = zT + 5 + (zT % 2 == 0 ? 0 : 1);          // row of the write unit, odd, so the relay lands on rows 7 and 5
+		int readAt = zT - 1;
+		int writeAt = zW - 1;
+		CellBuilder b = new CellBuilder("ram_vault_" + k, 7, 6, 14);
+		b.fill(0, 0, 0, 6, 0, 13, STONE);
+		b.walls(0, 1, 0, 6, 1, 13, BRICK);
+		b.fill(0, 2, 0, 6, 2, 13, MEZZ);
+		b.walls(0, 3, 0, 6, 3, 13, GLASS);
+		b.walls(0, 4, 0, 6, 4, 13, BRICK);
+		b.fill(0, 5, 0, 6, 5, 13, BRICK);
+		b.set(3, 5, 6, "minecraft:glowstone").set(3, 5, 10, "minecraft:glowstone");
+		// ---- ground floor: select in, the snake down the east side, the two decoders
+		b.comparator(3, 1, 0, SOUTH, false);              // sel_in
+		b.set(3, 1, 1, BRICK);                            // Bs = sel
+		b.comparator(4, 1, 1, EAST, false);
+		b.set(5, 1, 1, BRICK);                            // Bs' = sel; the snake starts under it
+		for (int z = 2; z <= 12; z++) {
+			b.dust(5, 1, z);                              // sel - (z-2)
+		}
+		// read unit: R = [sel >= readAt] - [sel >= readAt+1]
+		b.repeater(4, 1, zT, WEST, 1);
+		b.set(3, 1, zT, BRICK);                           // T
+		b.repeater(4, 1, zT + 1, WEST, 1);
+		b.set(3, 1, zT + 1, BRICK);                       // b
+		b.dust(2, 1, zT + 1);                             // 15 beside b, into R's side
+		b.comparator(2, 1, zT, WEST, true);               // R
+		b.set(1, 1, zT, BRICK);                           // R block, under a torch
+		// write unit: W = [sel >= writeAt] - [sel >= writeAt+1]
+		b.repeater(4, 1, zW, WEST, 1);
+		b.set(3, 1, zW, BRICK);
+		b.repeater(4, 1, zW + 1, WEST, 1);
+		b.set(3, 1, zW + 1, BRICK);
+		b.dust(2, 1, zW + 1);
+		b.comparator(2, 1, zW, WEST, true);               // W
+		b.set(1, 1, zW, BRICK);                           // W' block
+		for (int z = zW - 1; z >= 6; z -= 2) {            // W' relays north to (1,1,7) and (1,1,5)
+			b.repeater(1, 1, z, NORTH, 1);
+			b.set(1, 1, z - 1, BRICK);
+		}
+		// ---- mezzanine torches: each powers the block above with the inverse of the block below
+		b.torch(1, 2, zT);                                // NOT R  -> (1,3,zT)
+		b.torch(1, 2, 5);                                 // NOT W' -> (1,3,5)
+		b.wallTorch(0, 1, 7, WEST);                       // hangs on (1,1,7) = W': lit = NOT W'
+		b.set(0, 2, 7, MEZZ);                             // powered by that torch = NOT W'
+		b.torch(0, 3, 7);                                 // lit = W'
+		// ---- first floor: data in, the ring, the return
+		b.comparator(2, 3, 0, SOUTH, false);              // data_in
+		b.set(2, 3, 1, BRICK);
+		b.comparator(1, 3, 1, WEST, false);
+		b.set(0, 3, 1, BRICK);
+		b.comparator(0, 3, 2, SOUTH, false).comparator(0, 3, 3, SOUTH, false);
+		b.set(0, 3, 4, BRICK);
+		b.comparator(1, 3, 4, EAST, false).comparator(2, 3, 4, EAST, false).comparator(3, 3, 4, EAST, false);
+		b.set(4, 3, 4, BRICK);                            // Bd = data
+		b.comparator(4, 3, 5, SOUTH, true);               // Cin, open while NOT W' is low
+		b.set(1, 3, 5, BRICK);                            // NOT W'
+		b.repeater(2, 3, 5, EAST, 1).repeater(3, 3, 5, EAST, 1);   // into Cin's side
+		b.set(4, 3, 6, BRICK);                            // B1
+		b.comparator(5, 3, 6, EAST, false);               // C1
+		b.set(6, 3, 6, BRICK);                            // B2
+		b.comparator(6, 3, 7, SOUTH, false);              // C2
+		b.set(6, 3, 8, BRICK);                            // B3
+		b.comparator(5, 3, 8, WEST, false);               // C3
+		b.set(4, 3, 8, BRICK);                            // B4
+		b.comparator(4, 3, 7, NORTH, true);               // C4, broken while W' is high
+		b.repeater(1, 3, 7, EAST, 1);                     // reads the W' torch behind it
+		b.set(2, 3, 7, BRICK);                            // W'
+		b.repeater(3, 3, 7, EAST, 1);                     // into C4's side
+		// the value: B2 read north, gated by NOT R, west to the return lane
+		b.comparator(6, 3, 5, NORTH, false);
+		b.set(6, 3, 4, BRICK);
+		b.comparator(6, 3, 3, NORTH, true);               // gate: value - NOT R
+		b.set(4, 3, 3, BRICK);                            // NOT R lands here from the roof-level dust
+		b.repeater(5, 3, 3, EAST, 1);                     // into the gate's side
+		b.set(6, 3, 2, BRICK);
+		b.comparator(5, 3, 2, WEST, false);
+		b.set(4, 3, 2, BRICK);
+		b.comparator(4, 3, 1, NORTH, false);
+		b.comparator(4, 3, 0, NORTH, false);              // ret_out
+		// ---- NOT R: block over the torch, then dust along the roof level to (4,3,3)
+		b.set(1, 3, zT, BRICK).set(2, 3, zT, BRICK).set(3, 3, zT, BRICK).set(3, 3, 3, BRICK);
+		b.dust(1, 4, zT).dust(2, 4, zT).dust(3, 4, zT);
+		if (zT != 3) {
+			b.dust(3, 4, 3);
+		}
+		b.dust(4, 4, 3);
+		// core weight: a wanted vault may stand right off the Core's east gate; otherwise vaults belong to RAM
+		return b.kind("logic").truth("ram_" + readAt + "_" + writeAt)
+				.port("sel_in", "in", NORTH, 3, 1, 0, 4)
+				.port("data_in", "in", NORTH, 2, 3, 0, 4)
+				.port("ret_out", "out", NORTH, 4, 3, 0, 4)
+				.weight("core", 6).weight("residential", 0).weight("forge", 0).weight("plaza", 0).weight("ram", 8).weight("storage", 0)
+				.cost(80, 260, 0);
+	}
+
+	/**
+	 * A bus branch: the three lanes continue south and also turn east. Select and data fan out
+	 * (data crosses over the return lane at roof level, on comparators standing on a return-lane
+	 * block); the two returns merge into one block, which takes the stronger, so only the
+	 * addressed vault is ever heard.
+	 */
+	static CellBuilder busBranch() {
+		CellBuilder b = shell("bus_branch", 6);
+		b.fill(0, 1, 0, 6, 1, 6, BRICK);
+		b.fill(0, 2, 0, 6, 2, 6, MEZZ);
+		b.fill(0, 3, 0, 6, 3, 6, BRICK);
+		b.fill(0, 5, 0, 6, 5, 6, GLASS);
+		// select: south lane with a block after the port, and an east tap off that block
+		b.comparator(3, 1, 0, SOUTH, false);
+		b.set(3, 1, 1, BRICK);
+		for (int z = 2; z <= 6; z++) {
+			b.comparator(3, 1, z, SOUTH, false);
+		}
+		b.comparator(4, 1, 1, EAST, false);
+		b.set(5, 1, 1, BRICK);
+		b.comparator(5, 1, 2, SOUTH, false);
+		b.set(5, 1, 3, BRICK);
+		b.comparator(6, 1, 3, EAST, false);               // sel_out_e
+		// data: south lane, alternating comparators and blocks
+		b.comparator(2, 3, 0, SOUTH, false);
+		b.set(2, 3, 1, BRICK);
+		b.comparator(2, 3, 2, SOUTH, false);
+		b.set(2, 3, 3, BRICK);
+		b.comparator(2, 3, 4, SOUTH, false);
+		b.set(2, 3, 5, BRICK);
+		b.comparator(2, 3, 6, SOUTH, false);              // data_out
+		// data east: up from the block at (2,3,5), over the return lane on comparators, down onto (5,3,4)
+		b.dust(2, 4, 5);
+		b.comparator(3, 4, 5, EAST, false).comparator(4, 4, 5, EAST, false);
+		b.set(5, 4, 5, BRICK);
+		b.dust(5, 4, 4);
+		b.comparator(6, 3, 4, EAST, false);               // data_out_e reads (5,3,4), powered by the dust on it
+		// return: north lane with a block under the crossing and the merge block near the port
+		b.comparator(4, 3, 6, NORTH, false);              // ret_in
+		b.set(4, 3, 5, BRICK);
+		b.comparator(4, 3, 4, NORTH, false).comparator(4, 3, 3, NORTH, false);
+		b.set(4, 3, 2, BRICK);                            // merge
+		b.comparator(4, 3, 1, NORTH, false);
+		b.comparator(4, 3, 0, NORTH, false);              // ret_out
+		b.comparator(6, 3, 2, WEST, false);               // ret_in_e
+		b.comparator(5, 3, 2, WEST, false);               // into the merge block
+		b.set(3, 4, 6, "minecraft:air").set(3, 4, 4, "minecraft:air");
+		return b.kind("logic").truth("branch")
+				.port("sel_in", "in", NORTH, 3, 1, 0, 4)
+				.port("sel_out", "out", SOUTH, 3, 1, 6, 4)
+				.port("sel_out_e", "out", EAST, 6, 1, 3, 4)
+				.port("data_in", "in", NORTH, 2, 3, 0, 4)
+				.port("data_out", "out", SOUTH, 2, 3, 6, 4)
+				.port("data_out_e", "out", EAST, 6, 3, 4, 4)
+				.port("ret_in", "in", SOUTH, 4, 3, 6, 4)
+				.port("ret_in_e", "in", EAST, 6, 3, 2, 4)
+				.port("ret_out", "out", NORTH, 4, 3, 0, 4)
+				.weight("core", 3).weight("residential", 1).weight("forge", 2).weight("plaza", 1).weight("ram", 5).weight("storage", 1)
+				.cost(60, 120, 8).setpiece(false);
+	}
+
+	/** The end of a bus: the data lane turns around into the return lane, the select lane stops. A turning circle. */
+	static CellBuilder busEnd() {
+		CellBuilder b = shell("bus_end", 5);
+		b.fill(0, 1, 0, 6, 1, 6, BRICK);
+		b.fill(0, 2, 0, 6, 2, 6, "minecraft:polished_andesite");
+		b.comparator(3, 1, 0, SOUTH, false);
+		b.set(3, 1, 1, BRICK);
+		b.comparator(2, 3, 0, SOUTH, false);
+		b.set(2, 3, 1, BRICK);
+		b.comparator(3, 3, 1, EAST, false);
+		b.set(4, 3, 1, BRICK);
+		b.comparator(4, 3, 0, NORTH, false);
+		b.fill(1, 3, 0, 1, 3, 1, BRICK).fill(5, 3, 0, 5, 3, 1, BRICK);
+		b.fill(2, 4, 0, 4, 4, 1, GLASS);
+		b.fill(2, 3, 3, 4, 3, 3, BRICK).set(3, 3, 4, BRICK).set(3, 4, 3, BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		return b.kind("logic").truth("loopback")
+				.port("sel_in", "in", NORTH, 3, 1, 0, 4)
+				.port("data_in", "in", NORTH, 2, 3, 0, 4)
+				.port("ret_out", "out", NORTH, 4, 3, 0, 4)
+				.weight("core", 2).weight("residential", 1).weight("forge", 2).weight("plaza", 1).weight("ram", 4).weight("storage", 1)
+				.cost(12, 60, 4).setpiece(false);
 	}
 
 	/** A paved square with a fountain in the middle and four lantern posts. No ports: the grammar's fallback that always fits. */
@@ -213,7 +457,7 @@ public final class Cells {
 		CellBuilder b = street("junction");
 		b.fill(0, 0, 3, 6, 0, 3, BRICK);
 		b.fill(0, 1, 3, 6, 1, 3, "minecraft:air");
-		b.fill(0, 2, 3, 6, 2, 3, GLASS);
+		b.fill(0, 2, 3, 6, 2, 3, GRATE);
 		b.set(3, 0, 3, "minecraft:chiseled_stone_bricks");
 		b.repeater(3, 1, 0, SOUTH, 1);
 		b.dust(3, 1, 1).dust(3, 1, 2).dust(3, 1, 3).dust(3, 1, 4).dust(3, 1, 5);
@@ -237,18 +481,115 @@ public final class Cells {
 	 * A street: paving slabs across the whole cell, a glass-covered groove down the middle for
 	 * the wire, lantern posts on the corners. The signal path itself is left to the caller.
 	 */
+	/** An iron grate flush with the paving: you walk over the wire and see it below. Pistons and torches never touch it. */
+	static final BlockSpec GRATE = BlockSpec.of("minecraft:iron_trapdoor", "half", "bottom", "facing", "north", "open", "false");
+	static final String PAVING = "minecraft:stone_bricks";
+
 	private static CellBuilder street(String id) {
 		CellBuilder b = shell(id, 4);
 		b.fill(0, 0, 0, 6, 0, 6, "minecraft:polished_andesite");
 		b.fill(3, 0, 0, 3, 0, 6, BRICK);
-		b.fill(0, 1, 0, 6, 1, 6, SLAB);
-		b.fill(3, 1, 0, 3, 1, 6, "minecraft:air");
-		b.fill(3, 2, 0, 3, 2, 6, GLASS);
-		for (int[] c : new int[][] {{0, 0}, {6, 0}, {0, 6}, {6, 6}}) {
-			b.set(c[0], 1, c[1], "minecraft:oak_fence").set(c[0], 2, c[1], "minecraft:oak_fence");
-			b.set(c[0], 3, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
-		}
+		b.fill(0, 1, 0, 6, 1, 6, PAVING);            // a street you walk on
+		b.fill(3, 1, 0, 3, 1, 6, "minecraft:air");   // the groove for the wire
+		b.fill(3, 2, 0, 3, 2, 6, GRATE);             // grated over, flush with the paving
+		lanternPosts(b, 2);
 		return b;
+	}
+
+	/** Lantern posts on the four corners, standing on the paving at {@code y}. */
+	private static void lanternPosts(CellBuilder b, int y) {
+		for (int[] c : new int[][] {{0, 0}, {6, 0}, {0, 6}, {6, 6}}) {
+			b.set(c[0], y, c[1], "minecraft:oak_fence");
+			b.set(c[0], y + 1, c[1], BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		}
+	}
+
+	/**
+	 * A garden lane: the street's middle three columns only; the four columns either side are
+	 * structure void, so the land stays what it was (grass, flowers, a tree's edge) and the city
+	 * breathes between its buildings. The wire is unchanged: a walkable groove under a grate.
+	 */
+	static CellBuilder gardenLane() {
+		CellBuilder b = new CellBuilder("garden_lane", 7, 4, 7);
+		b.fill(0, 0, 0, 1, 3, 6, "minecraft:structure_void").fill(5, 0, 0, 6, 3, 6, "minecraft:structure_void");
+		b.fill(2, 0, 0, 4, 0, 6, STONE);
+		b.fill(3, 0, 0, 3, 0, 6, BRICK);
+		b.fill(2, 1, 0, 4, 1, 6, PAVING);
+		b.fill(3, 1, 0, 3, 1, 6, "minecraft:air");
+		b.fill(3, 2, 0, 3, 2, 6, GRATE);
+		b.set(2, 2, 0, "minecraft:oak_fence").set(2, 3, 0, BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		b.set(4, 2, 6, "minecraft:oak_fence").set(4, 3, 6, BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		b.repeater(3, 1, 0, SOUTH, 1);
+		for (int z = 1; z <= 5; z++) {
+			b.dust(3, 1, z);
+		}
+		b.repeater(3, 1, 6, SOUTH, 1);
+		return b.kind("logic").truth("passthrough")
+				.port("in", "in", NORTH, 3, 1, 0, 1)
+				.port("out", "out", SOUTH, 3, 1, 6, 1)
+				.fault(3, 1, 3)
+				.weight("core", 1).weight("residential", 5).weight("forge", 1).weight("plaza", 4).weight("ram", 1).weight("storage", 2)
+				.cost(6, 30, 4);
+	}
+
+	/**
+	 * The gatehouse (defence you can program): a three-wide arch over the street with a portcullis
+	 * of iron bars in its south mouth. The control port on the west face runs up a dust stair in
+	 * the west wall to the roof, where it powers three sticky pistons that drop the bars into the
+	 * arch. Any value above 0 shuts the gate; 0 opens it.
+	 */
+	static CellBuilder gatehouse() {
+		CellBuilder b = shell("gatehouse", 9);
+		b.fill(2, 1, 0, 4, 1, 6, PAVING);                       // the walkway
+		b.fill(0, 1, 0, 1, 6, 6, BRICK).fill(5, 1, 0, 6, 6, 6, BRICK);   // the two towers
+		b.fill(2, 6, 0, 4, 6, 6, BRICK);                        // the roof over the arch
+		b.fill(2, 5, 0, 4, 5, 5, BRICK);                        // the arch's vault
+		// the portcullis: sticky pistons in the south mouth push iron bars down into the arch
+		for (int x = 2; x <= 4; x++) {
+			b.stickyPiston(x, 5, 6, DOWN);
+			b.set(x, 4, 6, "minecraft:iron_bars");
+		}
+		// the control: a repeater in the west face, then a dust stair inside the west tower's window wall
+		b.repeater(0, 1, 0, EAST, 1);
+		b.fill(1, 1, 0, 1, 6, 6, GLASS);                        // the window wall the stair climbs
+		int[][] stair = {{1, 0}, {2, 1}, {3, 2}, {4, 3}, {5, 4}, {6, 5}, {7, 6}};   // {y, z}: dust at (1,y,z) on a brick at (1,y-1,z)
+		for (int[] s : stair) {
+			if (s[0] > 1) {
+				b.set(1, s[0] - 1, s[1], BRICK);
+			}
+			b.dust(1, s[0], s[1]);
+		}
+		b.dust(2, 7, 6).dust(3, 7, 6).dust(4, 7, 6);            // along the roof to the pistons' blocks
+		lanternPosts(b, 7);
+		return b.kind("actuator").truth("actuator")
+				.port("gate", "in", WEST, 0, 1, 0, 4)
+				.weight("core", 3).weight("residential", 1).weight("forge", 0).weight("plaza", 2).weight("ram", 0).weight("storage", 1)
+				.cost(24, 200, 12);
+	}
+
+	/**
+	 * The footfall plaza (the sensor that lets a program answer to a player): three gold plates
+	 * across the path; the blocks under them carry the plates' weight to a dust row and out
+	 * through a comparator. One player reads 1; a crowd reads more.
+	 */
+	static CellBuilder footfallPlaza() {
+		CellBuilder b = shell("footfall_plaza", 4);
+		b.fill(0, 1, 0, 6, 1, 6, PAVING);
+		for (int x = 2; x <= 4; x++) {
+			b.set(x, 2, 4, "minecraft:light_weighted_pressure_plate");
+			b.set(x, 1, 5, "minecraft:air");
+			b.dust(x, 1, 5);
+			b.set(x, 2, 5, GRATE);
+		}
+		b.set(3, 1, 6, "minecraft:air");
+		b.comparator(3, 1, 6, SOUTH, false);
+		b.set(3, 2, 6, GRATE);
+		b.set(3, 2, 2, "minecraft:stone_brick_wall").set(3, 3, 2, BlockSpec.of("minecraft:lantern", "hanging", "false"));
+		lanternPosts(b, 2);
+		return b.kind("sensor").truth("sensor")
+				.port("out", "out", SOUTH, 3, 1, 6, 4)
+				.weight("core", 1).weight("residential", 2).weight("forge", 0).weight("plaza", 4).weight("ram", 0).weight("storage", 1)
+				.cost(8, 60, 2);
 	}
 
 	private static CellBuilder shell(String id, int height) {
@@ -277,11 +618,15 @@ public final class Cells {
 		b.repeater(3, 1, 0, SOUTH, 1);
 		b.set(3, 1, 1, BRICK);
 		b.wallTorch(3, 1, 2, SOUTH);
-		b.lamp(3, 2, 2);
 		b.dust(3, 1, 3).dust(3, 1, 4).dust(3, 1, 5);
 		b.repeater(3, 1, 6, SOUTH, 1);
-		b.fill(2, 1, 0, 2, 2, 6, BRICK).fill(4, 1, 0, 4, 2, 6, BRICK);
-		b.fill(2, 3, 0, 4, 3, 6, GLASS);
+		// the same profile as a street: paving beside the wire, a grate over the groove, so you walk
+		// straight through; the lamp sits in the grate line over the torch, paving over the torch's block
+		b.fill(0, 1, 0, 2, 1, 6, PAVING).fill(4, 1, 0, 6, 1, 6, PAVING);
+		b.fill(3, 2, 0, 3, 2, 6, GRATE);
+		b.set(3, 2, 1, PAVING);
+		b.lamp(3, 2, 2);
+		lanternPosts(b, 2);
 		return b.kind("logic").truth("not")
 				.port("in", "in", NORTH, 3, 1, 0, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
@@ -355,7 +700,8 @@ public final class Cells {
 				.port("in", "in", NORTH, 3, 1, 0, 4)
 				.port("clk", "in", WEST, 0, 1, 3, 1)
 				.port("out", "out", SOUTH, 3, 1, 6, 4)
-				.weight("core", 1).weight("residential", 0).weight("forge", 0).weight("plaza", 0).weight("ram", 8).weight("storage", 0)
+				// zero weights: programs live in RAM vaults on the bus now; this one is for blueprints and hand-built circuits
+				.weight("core", 0).weight("residential", 0).weight("forge", 0).weight("plaza", 0).weight("ram", 0).weight("storage", 0)
 				.cost(32, 110, 0);
 	}
 
@@ -369,7 +715,7 @@ public final class Cells {
 	 * step with the clock. Torches toggle every 34 ticks, well under burn-out.
 	 */
 	static CellBuilder clockTower() {
-		CellBuilder b = shell("clock_tower", 11);
+		CellBuilder b = shell("clock_tower", 21);
 		b.set(3, 1, 2, BRICK);                 // B
 		b.wallTorch(4, 1, 2, EAST);            // T hangs on B
 		b.repeater(4, 1, 3, SOUTH, 4);         // R0 reads T
@@ -385,8 +731,8 @@ public final class Cells {
 		b.fill(0, 4, 0, 6, 4, 6, BRICK);
 		b.set(3, 1, 0, "minecraft:air").set(3, 2, 0, "minecraft:air");   // a doorway on the north face
 		b.repeater(3, 1, 6, SOUTH, 1);         // out port taps the dust, set in the south wall
-		// the spire: a 3x3 shaft around the torch ladder
-		for (int y = 2; y <= 9; y++) {
+		// the spire: a 3x3 shaft around the torch ladder, tall enough to find from anywhere in the city
+		for (int y = 2; y <= 19; y++) {
 			b.walls(2, y, 1, 4, y, 3, BRICK);
 			if (y % 2 == 0) {
 				b.torch(3, y, 2);                                    // T1, T2, ... on the block below
@@ -395,13 +741,13 @@ public final class Cells {
 				b.lamp(2, y, 2).lamp(4, y, 2).lamp(3, y, 1).lamp(3, y, 3);
 			}
 		}
-		b.fill(2, 10, 1, 4, 10, 3, "minecraft:stone_brick_slab");
-		b.set(3, 10, 2, "minecraft:glowstone");
+		b.fill(2, 20, 1, 4, 20, 3, "minecraft:stone_brick_slab");
+		b.set(3, 20, 2, "minecraft:glowstone");
 		// Zero weights: the city has one clock, placed by the planner next to the core.
 		return b.kind("logic").truth("clock")
 				.port("out", "out", SOUTH, 3, 1, 6, 1)
 				.weight("core", 0).weight("residential", 0).weight("forge", 0).weight("plaza", 0)
-				.cost(36, 220, 0);
+				.cost(60, 400, 0);
 	}
 
 	/**
@@ -425,10 +771,12 @@ public final class Cells {
 		// the deck: planks either side of a slime spine, so one piston moves all nine blocks
 		b.fill(2, 2, 3, 4, 2, 3, PLANKS).fill(2, 2, 5, 4, 2, 5, PLANKS);
 		b.fill(2, 2, 4, 4, 2, 4, "minecraft:slime_block");
-		// the input, under the north bank: port repeater, dust, repeater into the pier
+		// the input, in a groove through the north bank under glass, so the street's channel runs on to the water:
+		// port repeater, dust, repeater into the pier
 		b.repeater(3, 1, 0, SOUTH, 1);
 		b.dust(3, 1, 1);
 		b.repeater(3, 1, 2, SOUTH, 1);
+		b.fill(3, 2, 0, 3, 2, 2, GRATE);
 		// lanterns on the bank corners
 		for (int[] c : new int[][] {{0, 0}, {6, 0}, {0, 6}, {6, 6}}) {
 			b.set(c[0], 3, c[1], "minecraft:oak_fence");

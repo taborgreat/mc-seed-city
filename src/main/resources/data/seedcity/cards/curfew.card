@@ -1,0 +1,7 @@
+; Curfew: the gates shut and the Sentinels wake when the sun goes down, and the city opens at dawn.
+loop:
+IN R0 daylight_plaza.out
+NOT R0
+OUT gatehouse.*.gate R0
+WAIT 4
+JMP loop

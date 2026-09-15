@@ -115,9 +115,17 @@ public final class BuildTask {
 			}
 		}
 		BlockState defaultFloor = Blocks.STONE_BRICKS.defaultBlockState();
+		// columns the blueprint leaves to the land (structure void): neither dug nor founded
+		Set<Long> keep = new HashSet<>();
+		for (long c : placement.cell().voidColumns(placement.rotation())) {
+			int x = (int) (c / 1024);
+			int z = (int) (c - (long) x * 1024);
+			keep.add(Cell.column(placement.origin().offset(x, 0, z)));
+		}
+		java.util.function.Predicate<BlockPos> kept = p -> keep.contains(Cell.column(p));
 		List<Terrain.Placed> before = new ArrayList<>();
-		before.addAll(Terrain.clears(level, placement.footprint(), has::contains));
-		before.addAll(Terrain.foundation(level, placement.footprint(), p -> floor.getOrDefault(p, defaultFloor), foundationDepth));
+		before.addAll(Terrain.clears(level, placement.footprint(), p -> has.contains(p) || kept.test(p)));
+		before.addAll(Terrain.foundation(level, placement.footprint(), p -> floor.getOrDefault(p, defaultFloor), foundationDepth, kept));
 		List<Terrain.Placed> after = apronWidth > 0 ? Terrain.apron(level, placement.footprint(), openSides, apronWidth, insideCity) : List.of();
 		return new BuildTask(placement, slot, omit, false, before, after);
 	}

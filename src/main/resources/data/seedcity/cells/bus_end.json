@@ -1,0 +1,14 @@
+{
+  "id": "seedcity:bus_end",
+  "kind": "logic",
+  "size": [7, 5, 7],
+  "ports": [
+    { "name": "sel_in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 4 },
+    { "name": "data_in", "dir": "in", "face": "north", "pos": [2, 3, 0], "bits": 4 },
+    { "name": "ret_out", "dir": "out", "face": "north", "pos": [4, 3, 0], "bits": 4 }
+  ],
+  "truth": "loopback",
+  "weights": { "core": 2, "residential": 1, "forge": 2, "plaza": 1, "ram": 4, "storage": 1 },
+  "cost": { "redstone": 12, "stone": 60, "wood": 4 },
+  "setpiece": false
+}

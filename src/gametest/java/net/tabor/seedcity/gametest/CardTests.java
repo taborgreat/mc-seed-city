@@ -28,14 +28,16 @@ import java.util.Set;
 public final class CardTests {
 	private static final String BOAT = "seedcity:boat";
 	private static final int PLATFORM = 42;
-	private static final BlockPos SEED = new BlockPos(24, 2, 24);
+	private static final BlockPos SEED = new BlockPos(20, 2, 24);
 	private static final CityState.SlotKey BRIDGE = new CityState.SlotKey(1, 2);
-	private static final CityState.SlotKey VAULT = new CityState.SlotKey(-1, 0);
+	private static final CityState.SlotKey STREET = new CityState.SlotKey(1, 0);
+	private static final CityState.SlotKey VAULT = new CityState.SlotKey(2, 0);
 	/** One clock beat is 68 ticks; "within one cycle" plus write latency comfortably fits in 200. */
 	private static final int SETTLED = 420;
 
 	private static SeedCityConfig quietConfig() {
 		SeedCityConfig c = new SeedCityConfig();
+		c.unlimitedMaterials = true;   // not a supply test
 		c.dreamAtStart = false;
 		c.blocksPerSecond = 40;
 		c.maxBuilders = 1;
@@ -48,9 +50,8 @@ public final class CardTests {
 
 	/** Platform, Seed, core, clock, the forced junction, a drawbridge on its east output, and a register vault. */
 	private static CityState rootCity(GameTestHelper helper) {
-		int start = SEED.getX() - PLATFORM / 2;
-		for (int x = start; x < start + PLATFORM; x++) {
-			for (int z = start; z < start + PLATFORM; z++) {
+		for (int x = 0; x < 46; x++) {
+			for (int z = 3; z < 45; z++) {
 				helper.setBlock(new BlockPos(x, 0, z), Blocks.SMOOTH_STONE);
 				helper.setBlock(new BlockPos(x, 1, z), Blocks.SMOOTH_STONE);
 			}
@@ -62,7 +63,10 @@ public final class CardTests {
 		c.adopt(level, new CityState.SlotKey(0, 1), CityState.CLOCK_CELL, Rotation.NONE, false);
 		c.adopt(level, new CityState.SlotKey(0, 2), CityState.JUNCTION_CELL, Rotation.NONE, false);
 		c.adopt(level, BRIDGE, SeedCity.id("drawbridge"), Rotation.COUNTERCLOCKWISE_90, false);
-		c.adopt(level, VAULT, SeedCity.id("register_block"), Rotation.NONE, false);
+		// the bus: a street off the Core's east gate and a RAM vault at its end
+		c.adopt(level, STREET, SeedCity.id("bus_street"), Rotation.COUNTERCLOCKWISE_90, false);
+		c.adopt(level, VAULT, SeedCity.id("ram_vault_1"), Rotation.COUNTERCLOCKWISE_90, false);
+		helper.assertTrue(c.busVaults().size() == 1, "the vault should be on the bus: " + c.describeSlots());
 		return c;
 	}
 
@@ -97,7 +101,7 @@ public final class CardTests {
 			if (t == SETTLED + 400) {
 				helper.assertValueEqual(lows[0], 0, "ticks the bridge input dropped below 15 while the card held it");
 				helper.assertTrue(bridgeUp(c, level), "bridge should be up under the card");
-				helper.assertValueEqual(c.readPort(VAULT, "out"), 15, "R0 as read from its vault");
+				helper.assertValueEqual(c.registerValue(0), 15, "R0 as the program last saw it on the bus");
 				helper.succeed();
 			}
 		});
@@ -161,7 +165,8 @@ public final class CardTests {
 	public void subtractionRunsThroughTheAlu(GameTestHelper helper) {
 		CityState c = rootCity(helper);
 		ServerLevel level = helper.getLevel();
-		c.adopt(level, new CityState.SlotKey(1, 0), SeedCity.id("alu_sub"), Rotation.NONE, false);
+		// west of the core: the east side is the bus
+		c.adopt(level, new CityState.SlotKey(-1, 0), SeedCity.id("alu_sub"), Rotation.NONE, false);
 		CityState.CardResult r = c.insertCard(level, "SET R0 15\nSUB R0 6\nSUB R0 9\nSUB R0 3\nend:\nJMP end\n", ItemStack.EMPTY);
 		helper.assertTrue(r.accepted() && c.programLive(), "card should run: " + r.message());
 		int[] expected = {15, 9, 0, 0};
@@ -169,12 +174,12 @@ public final class CardTests {
 		helper.onEachTick(() -> {
 			long t = helper.getTick();
 			if (t > 60) {
-				observed.add(c.readPort(VAULT, "out"));
+				observed.add(c.registerValue(0));
 			}
 			if (t == 1800) {
 				helper.assertTrue(observed.contains(15) && observed.contains(9) && observed.contains(0),
 						"R0 should pass through 15, 9, 0; saw " + observed);
-				helper.assertValueEqual(c.readPort(VAULT, "out"), expected[3], "R0 at the end");
+				helper.assertValueEqual(c.registerValue(0), expected[3], "R0 at the end");
 				helper.succeed();
 			}
 		});

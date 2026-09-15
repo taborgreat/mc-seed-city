@@ -1,0 +1,6 @@
+; Alarm: a foot on the plaza seals every gate; the city opens again once the plaza is empty.
+loop:
+IN R0 footfall_plaza.out
+OUT gatehouse.*.gate R0
+WAIT 1
+JMP loop

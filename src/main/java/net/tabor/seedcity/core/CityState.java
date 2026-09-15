@@ -128,6 +128,8 @@ public final class CityState {
 		public int ordinal;
 		/** Floor level chosen from the terrain (Phase 5); null means the Seed's level. */
 		public Integer y;
+		/** For a slot covered by a cell anchored elsewhere (a 7x14 vault covers two): the anchor's key. */
+		public SlotKey anchor;
 
 		Slot(SlotKey key, SlotStatus status) {
 			this.key = key;
@@ -148,7 +150,7 @@ public final class CityState {
 	}
 
 	private record SlotData(int x, int z, String status, Optional<Identifier> cell, Rotation rotation, List<String> rejected,
-							long since, String note, boolean faulted, boolean guarded, int ordinal, Optional<Integer> y) {
+							long since, String note, boolean faulted, boolean guarded, int ordinal, Optional<Integer> y, Optional<Integer> ax, Optional<Integer> az) {
 		static final Codec<SlotData> CODEC = RecordCodecBuilder.create(i -> i.group(
 				Codec.INT.fieldOf("x").forGetter(SlotData::x),
 				Codec.INT.fieldOf("z").forGetter(SlotData::z),
@@ -161,12 +163,15 @@ public final class CityState {
 				Codec.BOOL.optionalFieldOf("faulted", false).forGetter(SlotData::faulted),
 				Codec.BOOL.optionalFieldOf("guarded", false).forGetter(SlotData::guarded),
 				Codec.INT.optionalFieldOf("ordinal", 0).forGetter(SlotData::ordinal),
-				Codec.INT.optionalFieldOf("y").forGetter(SlotData::y)
+				Codec.INT.optionalFieldOf("y").forGetter(SlotData::y),
+				Codec.INT.optionalFieldOf("ax").forGetter(SlotData::ax),
+				Codec.INT.optionalFieldOf("az").forGetter(SlotData::az)
 		).apply(i, SlotData::new));
 
 		static SlotData of(Slot s) {
 			return new SlotData(s.key.x(), s.key.z(), s.status.name(), Optional.ofNullable(s.cell), s.rotation,
-					List.copyOf(s.rejected), s.since, s.note, s.faulted, s.guarded, s.ordinal, Optional.ofNullable(s.y));
+					List.copyOf(s.rejected), s.since, s.note, s.faulted, s.guarded, s.ordinal, Optional.ofNullable(s.y),
+					s.anchor == null ? Optional.empty() : Optional.of(s.anchor.x()), s.anchor == null ? Optional.empty() : Optional.of(s.anchor.z()));
 		}
 
 		Slot toSlot() {
@@ -180,6 +185,9 @@ public final class CityState {
 			s.guarded = guarded;
 			s.ordinal = ordinal;
 			s.y = y.orElse(null);
+			if (ax.isPresent() && az.isPresent()) {
+				s.anchor = new SlotKey(ax.get(), az.get());
+			}
 			if (s.status == SlotStatus.BUILDING || s.status == SlotStatus.VERIFY) {
 				s.status = SlotStatus.PLANNED;   // re-run the task after a reload; correct blocks are skipped
 			}
@@ -242,7 +250,7 @@ public final class CityState {
 	/** Per-city config, set by tests or tools; null means the global config. Not persisted. */
 	private SeedCityConfig configOverride;
 	/** Debug labels over every built cell (/seedcity labels). Not persisted. */
-	private boolean labels;
+	private Boolean labels;
 	/** Slots whose ground could not be read this round (chunk not loaded). Not persisted. */
 	private final Set<SlotKey> deferred = new HashSet<>();
 	/** L3: how many cards the city has dreamed, and whether the current card is one of them. */
@@ -400,6 +408,10 @@ public final class CityState {
 	}
 
 	public Optional<Placement> placement(Slot s) {
+		if (s.anchor != null) {
+			Slot a = slots.get(s.anchor);
+			return a == null || a == s ? Optional.empty() : placement(a);
+		}
 		if (s.cell == null) {
 			return Optional.empty();
 		}
@@ -412,6 +424,83 @@ public final class CityState {
 	public Optional<Placement> placement(SlotKey k) {
 		Slot s = slots.get(k);
 		return s == null ? Optional.empty() : placement(s);
+	}
+
+	/** The slot that owns the cell covering {@code k}: itself, or its anchor. */
+	private Slot anchorSlot(SlotKey k) {
+		Slot s = slots.get(k);
+		if (s != null && s.anchor != null) {
+			return slots.get(s.anchor);
+		}
+		return s;
+	}
+
+	/** The slot key of the column a world position falls in. */
+	public SlotKey keyAt(BlockPos p) {
+		BlockPos flat = coreOrigin();
+		return new SlotKey(Math.floorDiv(p.getX() - flat.getX(), SLOT), Math.floorDiv(p.getZ() - flat.getZ(), SLOT));
+	}
+
+	/** Every slot a cell anchored at {@code anchor} covers when placed with {@code rotation}: its footprint in 7x7 slots. */
+	public List<SlotKey> coveredSlots(SlotKey anchor, Cell cell, Rotation rotation) {
+		BlockPos origin = slotOrigin(anchor).offset(Cell.rotationShift(rotation, cell.size()));
+		var box = cell.footprint(origin, rotation);
+		int nx = Math.max(1, box.getXSpan() / SLOT);
+		int nz = Math.max(1, box.getZSpan() / SLOT);
+		List<SlotKey> out = new ArrayList<>();
+		for (int dx = 0; dx < nx; dx++) {
+			for (int dz = 0; dz < nz; dz++) {
+				out.add(new SlotKey(anchor.x() + dx, anchor.z() + dz));
+			}
+		}
+		return out;
+	}
+
+	/** Slots covered by the cell anchored at {@code s} (including itself). */
+	private List<SlotKey> covered(Slot s) {
+		if (s.cell == null) {
+			return List.of(s.key);
+		}
+		Optional<Cell> cell = CellLibrary.get(s.cell);
+		return cell.isEmpty() ? List.of(s.key) : coveredSlots(s.key, cell.get(), s.rotation);
+	}
+
+	/** Sets a status on an anchor slot and every slot its cell covers. */
+	private void setStatus(Slot anchor, SlotStatus status) {
+		anchor.status = status;
+		for (Slot o : slots.values()) {
+			if (o.anchor != null && o.anchor.equals(anchor.key)) {
+				o.status = status;
+			}
+		}
+	}
+
+	/** Frees the slots a cell covered besides its anchor (the cell is being re-planned). */
+	private void releaseCovered(Slot anchor) {
+		slots.values().removeIf(o -> o.anchor != null && o.anchor.equals(anchor.key));
+	}
+
+	/** A neighbour port meeting one of ours across the shared edge, with the slot that owns it. */
+	public record Meeting(Slot slot, Placement.WorldPort port) {
+	}
+
+	/** The port of a built or planned neighbour that sits just outside {@code ours} and faces it. */
+	public Optional<Meeting> meeting(Placement.WorldPort ours) {
+		BlockPos outside = ours.outside();
+		Slot n = anchorSlot(keyAt(outside));
+		if (n == null || !n.occupies() || n.cell == null) {
+			return Optional.empty();
+		}
+		Optional<Placement> p = placement(n);
+		if (p.isEmpty()) {
+			return Optional.empty();
+		}
+		for (Placement.WorldPort wp : p.get().ports()) {
+			if (wp.pos().equals(outside) && wp.face() == ours.face().getOpposite()) {
+				return Optional.of(new Meeting(n, wp));
+			}
+		}
+		return Optional.empty();
 	}
 
 	private String[] sectors;
@@ -485,6 +574,18 @@ public final class CityState {
 		return out;
 	}
 
+	/** Cells of a type the city has committed to: planned, building, verifying or built (faults excluded: they wait for a player). */
+	public int committedOfType(String type) {
+		int n = 0;
+		for (Slot s : slots.values()) {
+			if (s.anchor == null && s.cell != null && s.cell.getPath().equals(type)
+					&& (s.status == SlotStatus.PLANNED || s.status == SlotStatus.BUILDING || s.status == SlotStatus.VERIFY || s.status == SlotStatus.BUILT)) {
+				n++;
+			}
+		}
+		return n;
+	}
+
 	private void assignOrdinal(Slot s) {
 		if (s.ordinal > 0 || s.cell == null) {
 			return;
@@ -523,6 +624,90 @@ public final class CityState {
 			return -1;
 		}
 		return level.getSignal(wp.get().pos(), wp.get().face().getOpposite());
+	}
+
+	/** The value arriving at an input port of a built cell (what its neighbour or a terminal drives it with). -1 when unavailable. */
+	public int readInput(SlotKey k, String port) {
+		if (level == null) {
+			return -1;
+		}
+		Optional<Placement.WorldPort> wp = worldPort(k, port);
+		if (wp.isEmpty()) {
+			return -1;
+		}
+		return level.getSignal(wp.get().pos(), wp.get().face());
+	}
+
+	/** Cell-local terminal blocks inside the Core that drive its bus lanes. */
+	private static final Map<String, BlockPos> CORE_LANES = Map.of("sel", new BlockPos(5, 1, 3), "data", new BlockPos(5, 3, 4));
+
+	/** Sets a Core bus lane ("sel" or "data") through the terminal block built into the Core. */
+	public void driveCoreLane(ServerLevel level, String lane, int power) {
+		Optional<Placement> core = placement(new SlotKey(0, 0));
+		BlockPos local = CORE_LANES.get(lane);
+		if (core.isEmpty() || local == null) {
+			return;
+		}
+		BlockPos pos = core.get().origin().offset(local.rotate(core.get().rotation()));
+		BlockState now = level.getBlockState(pos);
+		if (!now.is(SeedCityBlocks.TERMINAL)) {
+			return;   // the gate is damaged; a Rectifier will put it back
+		}
+		BlockState next = now.setValue(net.tabor.seedcity.verify.ProbeBlock.POWER, Math.max(0, Math.min(15, power)));
+		if (!now.equals(next)) {
+			level.setBlock(pos, next, net.minecraft.world.level.block.Block.UPDATE_ALL);
+		}
+	}
+
+	/** Built RAM vaults the bus reaches from the Core, lowest address first. */
+	public List<Slot> busVaults() {
+		Set<SlotKey> live = liveSlots(true, false);
+		List<Slot> out = new ArrayList<>();
+		for (Slot s : slots.values()) {
+			if (s.status == SlotStatus.BUILT && s.cell != null && s.anchor == null && s.cell.getPath().startsWith("ram_vault_") && live.contains(s.key)) {
+				out.add(s);
+			}
+		}
+		out.sort(Comparator.comparingInt(s -> vaultAddresses(s).map(a -> a[0]).orElse(99)));
+		return out;
+	}
+
+	/** True when a cell of this type is planned, building or verifying somewhere the bus will reach once everything on the way is verified. */
+	public boolean connecting(String type) {
+		Set<SlotKey> coming = liveSlots(false, false);
+		for (Slot s : slots.values()) {
+			if (s.anchor == null && s.cell != null && s.cell.getPath().equals(type) && s.occupies() && s.status != SlotStatus.FAULT && coming.contains(s.key)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** The select values that read and write a RAM vault, from its truth model name {@code ram_<r>_<w>}. */
+	public static Optional<int[]> vaultAddresses(Slot s) {
+		if (s.cell == null) {
+			return Optional.empty();
+		}
+		return CellLibrary.get(s.cell).flatMap(c -> {
+			String[] parts = c.definition().truth().split("_");
+			if (parts.length != 3 || !parts[0].equals("ram")) {
+				return Optional.empty();
+			}
+			try {
+				return Optional.of(new int[] {Integer.parseInt(parts[1]), Integer.parseInt(parts[2])});
+			} catch (NumberFormatException e) {
+				return Optional.empty();
+			}
+		});
+	}
+
+	/** A register's value as the running program last saw it on the bus; -1 when there is no program or it never touched it. */
+	public int registerValue(int reg) {
+		if (executor == null) {
+			return -1;
+		}
+		Integer v = executor.knownValues().get(reg);
+		return v == null ? -1 : v;
 	}
 
 	/** The Clock Tower's output right now; 0 when there is no built clock. The program's heartbeat. */
@@ -819,6 +1004,8 @@ public final class CityState {
 					plan = null;
 					runningText = null;
 					SeedCity.LOGGER.info("City {}: plan became live", seedPos.toShortString());
+				} else {
+					plan = again;   // its wants shrink as cells are planned and built
 				}
 			} catch (net.tabor.seedcity.card.CardError e) {
 				cardError = "CARD ERROR " + e;
@@ -858,8 +1045,8 @@ public final class CityState {
 			if (executor != null) {
 				lines.add(executor.status());
 				StringBuilder regs = new StringBuilder();
-				for (Map.Entry<Integer, SlotKey> e : executor.registers().entrySet()) {
-					regs.append("R").append(e.getKey()).append('=').append(Math.max(0, readPort(e.getValue(), "out"))).append("  ");
+				for (Map.Entry<Integer, Integer> e : executor.knownValues().entrySet()) {
+					regs.append("R").append(e.getKey()).append('=').append(e.getValue()).append("  ");
 				}
 				if (!regs.isEmpty()) {
 					lines.add(regs.toString().trim());
@@ -877,49 +1064,82 @@ public final class CityState {
 
 	// ---- planning ---------------------------------------------------------------------------
 
-	private Port portFacing(Slot n, Direction sideFromUs) {
-		Optional<Cell> cell = CellLibrary.get(n.cell);
-		if (cell.isEmpty()) {
-			return null;
+	/** The ports a neighbour cell presents on the shared edge of slot {@code c}, on face {@code side}. */
+	private List<Placement.WorldPort> portsFacing(Slot n, SlotKey c, Direction side) {
+		Optional<Placement> p = placement(n);
+		List<Placement.WorldPort> out = new ArrayList<>();
+		if (p.isEmpty()) {
+			return out;
 		}
-		return Grammar.portOn(cell.get().ports(n.rotation), sideFromUs.getOpposite());
-	}
-
-	/** What the neighbours of a slot present on each shared face. */
-	public List<Constraint> constraints(SlotKey k) {
-		return constraints(k, liveSlots(false, false));
-	}
-
-	/**
-	 * Blocked neighbours and the world beyond the radius count as walls, so a rotation that
-	 * points an output into the void is not mistaken for one with room to grow.
-	 */
-	private List<Constraint> constraints(SlotKey k, Set<SlotKey> live) {
-		int maxRadius = cfg().maxRadiusSlots;
-		List<Constraint> out = new ArrayList<>();
-		for (Direction side : SIDES) {
-			SlotKey nk = k.offset(side);
-			Slot n = slots.get(nk);
-			if (nk.chebyshev() > maxRadius || (n != null && n.status == SlotStatus.BLOCKED)) {
-				out.add(Constraint.wall(side));
-				continue;
-			}
-			if (n == null || !n.occupies() || n.cell == null) {
-				continue;
-			}
-			if (!level(k, nk)) {
-				out.add(Constraint.wall(side));   // a step in the ground: the street ends here
-				continue;
-			}
-			Port facingUs = portFacing(n, side);
-			if (facingUs == null) {
-				out.add(Constraint.wall(side));
-			} else {
-				boolean isLive = facingUs.dir() == PortDir.OUT && live.contains(n.key);
-				out.add(new Constraint(side, facingUs, isLive));
+		for (Placement.WorldPort wp : p.get().ports()) {
+			if (wp.face() == side.getOpposite() && keyAt(wp.outside()).equals(c)) {
+				out.add(wp);
 			}
 		}
 		return out;
+	}
+
+	/**
+	 * The constraints on every outer face of the footprint a cell would cover from {@code anchor},
+	 * or empty when there is no room: a covered slot out of radius, already taken, deferred, on a
+	 * different level, or past the chunk cap. Blocked neighbours and the world beyond the radius
+	 * count as walls, so a rotation that points an output into the void is not mistaken for one
+	 * with room to grow.
+	 */
+	private Optional<Map<Grammar.Face, Constraint>> room(SlotKey anchor, Cell cell, Rotation rotation, Set<SlotKey> live,
+														 Function<SlotKey, Fit> fitter, SeedCityConfig cfg) {
+		List<SlotKey> covered = coveredSlots(anchor, cell, rotation);
+		Set<SlotKey> coveredSet = new HashSet<>(covered);
+		int y = slotY(anchor);
+		Set<Long> span = chunkSpan();
+		for (SlotKey c : covered) {
+			if (c.chebyshev() > cfg.maxRadiusSlots || deferred.contains(c)) {
+				return Optional.empty();
+			}
+			Slot existing = slots.get(c);
+			if (!c.equals(anchor) && existing != null && (existing.occupies() || existing.status == SlotStatus.BLOCKED || existing.anchor != null)) {
+				return Optional.empty();
+			}
+			if (!c.equals(anchor)) {
+				Fit f = fitter.apply(c);
+				if (!f.ok() || f.y() != y) {
+					return Optional.empty();
+				}
+			}
+			span.addAll(chunksOf(c));
+		}
+		if (span.size() > cfg.maxChunks) {
+			return Optional.empty();
+		}
+		Map<Grammar.Face, Constraint> out = new HashMap<>();
+		for (SlotKey c : covered) {
+			for (Direction side : SIDES) {
+				SlotKey nk = c.offset(side);
+				if (coveredSet.contains(nk)) {
+					continue;
+				}
+				int offset = side.getAxis() == Direction.Axis.Z ? c.x() - anchor.x() : c.z() - anchor.z();
+				Grammar.Face face = new Grammar.Face(offset, side);
+				Slot n = anchorSlot(nk);
+				Slot raw = slots.get(nk);
+				if (nk.chebyshev() > cfg.maxRadiusSlots || (raw != null && raw.status == SlotStatus.BLOCKED)) {
+					out.put(face, Constraint.wall(offset, side));
+					continue;
+				}
+				if (n == null || !n.occupies() || n.cell == null) {
+					continue;
+				}
+				BlockPos o = slotOrigin(c);
+				List<Constraint.Facing> facing = new ArrayList<>();
+				for (Placement.WorldPort wp : portsFacing(n, c, side)) {
+					int along = side.getAxis() == Direction.Axis.Z ? wp.pos().getX() - o.getX() : wp.pos().getZ() - o.getZ();
+					facing.add(new Constraint.Facing(wp.port(), along, wp.pos().getY() - y, wp.port().dir() == PortDir.OUT && live.contains(n.key),
+						CellLibrary.get(n.cell).map(cl -> cl.definition().kind()).orElse(null)));
+				}
+				out.put(face, new Constraint(offset, side, facing));   // a level step leaves nothing meeting: a wall in effect
+			}
+		}
+		return Optional.of(out);
 	}
 
 	/** Slots whose signal traces back to the clock tower. */
@@ -941,8 +1161,8 @@ public final class CityState {
 			if (ok && s.cell != null && CellLibrary.get(s.cell).isPresent()) {
 				eligible.add(s);
 				CellDefinition def = CellLibrary.get(s.cell).get().definition();
-				if ("clock".equals(def.truth()) || (!clockOnly && def.kind() == CellKind.SENSOR)) {
-					live.add(s.key);
+				if ("clock".equals(def.truth()) || (!clockOnly && (def.kind() == CellKind.SENSOR || def.kind() == CellKind.CORE))) {
+					live.add(s.key);   // the Core drives the bus; sensors drive their outputs
 				}
 			}
 		}
@@ -950,21 +1170,20 @@ public final class CityState {
 		while (changed) {
 			changed = false;
 			for (Slot s : eligible) {
-				if (live.contains(s.key)) {
+				if (live.contains(s.key) || s.anchor != null) {
 					continue;
 				}
-				Cell cell = CellLibrary.get(s.cell).get();
-				for (Direction side : SIDES) {
-					Port ours = Grammar.portOn(cell.ports(s.rotation), side);
-					if (ours == null || ours.dir() != PortDir.IN) {
+				Optional<Placement> p = placement(s);
+				if (p.isEmpty()) {
+					continue;
+				}
+				for (Placement.WorldPort ours : p.get().ports()) {
+					if (ours.port().dir() != PortDir.IN) {
 						continue;
 					}
-					Slot n = slots.get(s.key.offset(side));
-					if (n == null || !live.contains(n.key) || !level(s.key, n.key)) {
-						continue;
-					}
-					Port theirs = portFacing(n, side);
-					if (theirs != null && theirs.dir() == PortDir.OUT && ours.compatibleWith(theirs)) {
+					Optional<Meeting> m = meeting(ours);
+					if (m.isPresent() && m.get().port().port().dir() == PortDir.OUT && live.contains(m.get().slot().key)
+							&& (builtOnly ? m.get().slot().status == SlotStatus.BUILT : m.get().slot().occupies())) {
 						live.add(s.key);
 						changed = true;
 						break;
@@ -1035,16 +1254,33 @@ public final class CityState {
 		return Optional.ofNullable(bestAny);
 	}
 
-	/** True when a live neighbour has an output port on the face shared with this slot. */
-	private boolean fedByLive(SlotKey k, Set<SlotKey> live) {
+	/** True when a live neighbour points a bus lane at this slot. */
+	private boolean fedByBus(SlotKey k, Set<SlotKey> live) {
 		for (Direction side : SIDES) {
-			Slot n = slots.get(k.offset(side));
+			Slot n = anchorSlot(k.offset(side));
 			if (n == null || !live.contains(n.key) || (slots.containsKey(k) && !level(k, n.key))) {
 				continue;
 			}
-			Port p = portFacing(n, side);
-			if (p != null && p.dir() == PortDir.OUT) {
-				return true;
+			for (Placement.WorldPort p : portsFacing(n, k, side)) {
+				if (p.port().dir() == PortDir.OUT && p.port().isBusLane()) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** True when a live neighbour has an output port on the face shared with this slot. */
+	private boolean fedByLive(SlotKey k, Set<SlotKey> live) {
+		for (Direction side : SIDES) {
+			Slot n = anchorSlot(k.offset(side));
+			if (n == null || !live.contains(n.key) || (slots.containsKey(k) && !level(k, n.key))) {
+				continue;
+			}
+			for (Placement.WorldPort p : portsFacing(n, k, side)) {
+				if (p.port().dir() == PortDir.OUT) {
+					return true;
+				}
 			}
 		}
 		return false;
@@ -1067,7 +1303,7 @@ public final class CityState {
 	private int unassignedPlanned() {
 		int n = 0;
 		for (Slot s : slots.values()) {
-			if (s.status == SlotStatus.PLANNED && s.builder == null) {
+			if (s.status == SlotStatus.PLANNED && s.builder == null && s.anchor == null) {
 				n++;
 			}
 		}
@@ -1115,7 +1351,7 @@ public final class CityState {
 				continue;
 			}
 			int y = slotY(n.key);
-			if (portFacing(n, side) != null) {
+			if (!portsFacing(anchorSlot(n.key), k, side).isEmpty()) {
 				return y;
 			}
 			if (any == null) {
@@ -1157,6 +1393,53 @@ public final class CityState {
 			return new Fit(0, "occupied", false);
 		}
 		return new Fit(y, null, false);
+	}
+
+	/** Why a cell would or would not be planned at a slot right now: for `/seedcity fit` and tests. */
+	public String explain(ServerLevel level, SlotKey k, Identifier cellId, Rotation rotation) {
+		Optional<Cell> cell = CellLibrary.get(cellId);
+		if (cell.isEmpty()) {
+			return cellId + ": not in library";
+		}
+		SeedCityConfig cfg = cfg();
+		this.level = level;
+		StringBuilder sb = new StringBuilder(cellId.getPath()).append('/').append(rotation).append(" at ").append(k).append(" {").append(district(k)).append("}: ");
+		Slot s = slots.get(k);
+		sb.append("slot=").append(s == null ? "none" : s.status + " y=" + s.y).append(' ');
+		Fit fit = fitSlot(level, k);
+		sb.append("fit=").append(fit.ok() ? "y" + fit.y() : fit.reason()).append(' ');
+		if (!fit.ok()) {
+			return sb.toString();
+		}
+		Integer wasY = s == null ? null : s.y;
+		Slot tmp = slots.computeIfAbsent(k, key -> new Slot(key, SlotStatus.PENDING));
+		tmp.y = fit.y();
+		try {
+			Set<SlotKey> live = liveSlots(false, false);
+			sb.append("liveCore=").append(live.contains(new SlotKey(0, 0))).append(' ');
+			Optional<Map<Grammar.Face, Constraint>> room = room(k, cell.get(), rotation, live, key -> fitSlot(level, key), cfg);
+			if (room.isEmpty()) {
+				List<SlotKey> covered = coveredSlots(k, cell.get(), rotation);
+				sb.append("room=none covered=").append(covered);
+				for (SlotKey c : covered) {
+					Slot e = slots.get(c);
+					Fit f = fitSlot(level, c);
+					sb.append(' ').append(c).append(':').append(e == null ? "free" : e.status + "/" + e.cell + "/anchor=" + e.anchor).append("/fit=").append(f.ok() ? "y" + f.y() : f.reason());
+				}
+				return sb.toString();
+			}
+			sb.append("room=").append(room.get().keySet()).append(' ');
+			Grammar.Fit gf = Grammar.fit(cell.get(), rotation, room.get());
+			sb.append("grammar=").append(gf).append(" weight=").append(cell.get().definition().weight(district(k)))
+					.append(" wanted=").append(wantedCells().getOrDefault(cellId, 0));
+			return sb.toString();
+		} finally {
+			if (wasY == null && tmp.status == SlotStatus.PENDING && tmp.cell == null) {
+				slots.remove(k);
+			} else {
+				tmp.y = wasY;
+			}
+		}
 	}
 
 	/** Chunks a slot's footprint touches. */
@@ -1217,7 +1500,13 @@ public final class CityState {
 			}
 			Optional<Goal> goal = haveActuator ? Optional.empty() : Optional.of(Goal.WANT_ACTUATOR);
 			FrontierSlot fs = new FrontierSlot(k.x(), k.z(), district(k), Set.copyOf(s.rejected));
-			Optional<Choice> choice = Grammar.choose(fs, constraints(k, live), goal, wantedCells(), rng, CellLibrary.all());
+			Map<Identifier, Integer> existing = new HashMap<>();
+			for (Slot o : slots.values()) {
+				if (o.occupies() && o.cell != null) {
+					existing.merge(o.cell, 1, Integer::sum);
+				}
+			}
+			Optional<Choice> choice = Grammar.choose(fs, ch -> room(k, ch.cell(), ch.rotation(), live, fitter, cfg), goal, wantedCells(), existing, rng, CellLibrary.all());
 			if (choice.isEmpty()) {
 				s.status = SlotStatus.BLOCKED;
 				s.note = "no legal cell";
@@ -1227,6 +1516,20 @@ public final class CityState {
 			s.cell = choice.get().cell().id();
 			s.rotation = choice.get().rotation();
 			s.note = "";
+			if (!Grammar.hasBusInput(choice.get().cell()) && fedByBus(k, live)) {
+				SeedCity.LOGGER.info("City {}: bus lane reaching {} ends in {}", seedPos.toShortString(), k, s.cell.getPath());
+			}
+			for (SlotKey c : coveredSlots(k, choice.get().cell(), s.rotation)) {
+				if (c.equals(k)) {
+					continue;
+				}
+				Slot part = slots.computeIfAbsent(c, key -> new Slot(key, SlotStatus.PLANNED));
+				part.status = SlotStatus.PLANNED;
+				part.anchor = k;
+				part.cell = null;
+				part.y = s.y;
+				part.note = "";
+			}
 			// Plant a fault once the clock reaches enough of the city (doc 7: every city ships with faults).
 			CellDefinition def = choice.get().cell().definition();
 			if (!s.faulted && faultsPlanted() < cfg.faultsPerCity && clocked.size() >= cfg.faultAfterLiveCells
@@ -1243,24 +1546,24 @@ public final class CityState {
 	 * is not wasted on a cell chosen before anything pointed at it.
 	 */
 	private void revisitQuietNeighbours(Slot s) {
-		Optional<Cell> cell = CellLibrary.get(s.cell);
-		if (cell.isEmpty()) {
+		Optional<Placement> p = placement(s);
+		if (p.isEmpty()) {
 			return;
 		}
-		for (Direction side : SIDES) {
-			Port ours = Grammar.portOn(cell.get().ports(s.rotation), side);
-			if (ours == null || ours.dir() != PortDir.OUT) {
+		for (Placement.WorldPort ours : p.get().ports()) {
+			if (ours.port().dir() != PortDir.OUT) {
 				continue;
 			}
-			Slot n = slots.get(s.key.offset(side));
+			Slot n = anchorSlot(keyAt(ours.outside()));
 			if (n == null || n.status != SlotStatus.PLANNED || n.builder != null || n.cell == null) {
 				continue;
 			}
 			if (n.cell.equals(CORE_CELL) || n.cell.equals(CLOCK_CELL)) {
 				continue;
 			}
-			Port theirs = portFacing(n, side);
-			if (theirs == null || theirs.dir() != PortDir.IN) {
+			Optional<Meeting> m = meeting(ours);
+			if (m.isEmpty() || m.get().port().port().dir() != PortDir.IN) {
+				releaseCovered(n);
 				n.status = SlotStatus.PENDING;
 				n.cell = null;
 				n.faulted = false;
@@ -1276,8 +1579,12 @@ public final class CityState {
 	/** Whether a planned slot's volume is still clear at its chosen level (a player may have built there since). */
 	private boolean stillClear(ServerLevel level, SlotKey k) {
 		BlockPos o = slotOrigin(k);
-		int height = placement(k).map(p -> p.footprint().getYSpan()).orElse(maxCellHeight());
-		return Terrain.volumeClear(level, o.getX(), o.getZ(), SLOT, o.getY(), height, seedPos);
+		Optional<Placement> p = placement(k);
+		if (p.isEmpty()) {
+			return Terrain.volumeClear(level, o.getX(), o.getZ(), SLOT, o.getY(), maxCellHeight(), seedPos);
+		}
+		var box = p.get().footprint();
+		return Terrain.volumeClear(level, box.minX(), box.minZ(), box.getXSpan(), box.getZSpan(), box.minY(), box.getYSpan(), seedPos);
 	}
 
 	// ---- tasks ------------------------------------------------------------------------------
@@ -1296,10 +1603,14 @@ public final class CityState {
 	private BuildTask taskFor(ServerLevel level, Slot s, Placement p) {
 		BlockPos omit = s.faulted ? p.cell().definition().fault() : null;
 		List<Direction> open = new ArrayList<>();
-		for (Direction d : SIDES) {
-			Slot n = slots.get(s.key.offset(d));
-			if (n == null || !n.occupies()) {
-				open.add(d);
+		Set<SlotKey> mine = new HashSet<>(covered(s));
+		for (SlotKey c : mine) {
+			for (Direction d : SIDES) {
+				SlotKey nk = c.offset(d);
+				Slot n = slots.get(nk);
+				if (!mine.contains(nk) && (n == null || !n.occupies()) && !open.contains(d)) {
+					open.add(d);
+				}
 			}
 		}
 		SeedCityConfig cfg = cfg();
@@ -1321,7 +1632,7 @@ public final class CityState {
 			planAhead(k -> fitSlot(level, k), LOOKAHEAD, cfg);
 			Slot pick = null;
 			for (Slot s : slots.values()) {
-				if (s.status == SlotStatus.PLANNED && s.builder == null && !adjacentToVerification(s.key) && !skip.contains(s.key)) {
+				if (s.status == SlotStatus.PLANNED && s.builder == null && s.anchor == null && !adjacentToVerification(s.key) && !skip.contains(s.key)) {
 					pick = pick == null || better(pick.key, s.key) == s.key ? s : pick;
 				}
 			}
@@ -1343,7 +1654,7 @@ public final class CityState {
 				return Optional.empty();
 			}
 			spend(task.cost(), 1);
-			pick.status = SlotStatus.BUILDING;
+			setStatus(pick, SlotStatus.BUILDING);
 			pick.builder = builder;
 			pick.since = level.getGameTime();
 			return Optional.of(task);
@@ -1354,7 +1665,7 @@ public final class CityState {
 	public void abandon(BuildTask task) {
 		Slot s = slots.get(task.slot());
 		if (s != null && s.status == SlotStatus.BUILDING) {
-			s.status = SlotStatus.PLANNED;
+			setStatus(s, SlotStatus.PLANNED);
 			s.builder = null;
 			spend(task.cost(), -1);
 		}
@@ -1369,10 +1680,10 @@ public final class CityState {
 		s.builder = null;
 		spend(task.salvage(), -1);   // what was dug out of the way goes to the ledger
 		if (s.faulted) {
-			s.status = SlotStatus.FAULT;
+			setStatus(s, SlotStatus.FAULT);
 			SeedCity.LOGGER.info("City {}: fault planted at {} ({})", seedPos.toShortString(), s.key, s.cell);
 		} else {
-			s.status = SlotStatus.VERIFY;
+			setStatus(s, SlotStatus.VERIFY);
 			pendingVerify.add(task);
 		}
 	}
@@ -1381,7 +1692,7 @@ public final class CityState {
 	public void onRepaired(BuildTask task) {
 		Slot s = slots.get(task.slot());
 		if (s != null && s.status == SlotStatus.BUILT) {
-			s.status = SlotStatus.VERIFY;
+			setStatus(s, SlotStatus.VERIFY);
 			s.retries = 0;
 			builtCount--;
 			pendingVerify.add(BuildTask.repair(task.placement(), task.slot()));
@@ -1443,7 +1754,7 @@ public final class CityState {
 	private void onBuilt(BuildTask task) {
 		Slot s = slots.get(task.slot());
 		if (s != null) {
-			s.status = SlotStatus.BUILT;
+			setStatus(s, SlotStatus.BUILT);
 			s.builder = null;
 			builtCount++;
 			assignOrdinal(s);
@@ -1458,17 +1769,22 @@ public final class CityState {
 		}
 		SeedCity.LOGGER.warn("City {}: {} at {} failed verification ({}); re-planning", seedPos.toShortString(), s.cell, s.key, reason);
 		s.rejected.add(FrontierSlot.rejectKey(s.cell.toString(), s.rotation.ordinal()));
+		List<SlotKey> was = covered(s);
+		releaseCovered(s);
 		s.status = SlotStatus.PENDING;
 		s.cell = null;
 		s.builder = null;
 		s.retries = 0;
 		s.faulted = false;
 		spend(task.cost(), -1);
-		for (Direction d : SIDES) {
-			Slot n = slots.get(s.key.offset(d));
-			if (n != null && n.status == SlotStatus.PLANNED && n.builder == null) {
-				n.status = SlotStatus.PENDING;
-				n.cell = null;
+		for (SlotKey c : was) {
+			for (Direction d : SIDES) {
+				Slot n = anchorSlot(c.offset(d));
+				if (n != null && n.status == SlotStatus.PLANNED && n.builder == null && n.cell != null) {
+					releaseCovered(n);
+					n.status = SlotStatus.PENDING;
+					n.cell = null;
+				}
 			}
 		}
 	}
@@ -1536,13 +1852,21 @@ public final class CityState {
 		while (!t.step(level)) {
 			// place everything now
 		}
+		for (SlotKey c : covered(s)) {
+			if (!c.equals(k)) {
+				Slot part = slots.computeIfAbsent(c, key -> new Slot(key, SlotStatus.PLANNED));
+				part.anchor = k;
+				part.cell = null;
+				part.y = s.y;
+			}
+		}
 		if (faulted) {
-			s.status = SlotStatus.FAULT;
+			setStatus(s, SlotStatus.FAULT);
 		} else {
 			if (s.status != SlotStatus.BUILT) {
 				builtCount++;
 			}
-			s.status = SlotStatus.BUILT;
+			setStatus(s, SlotStatus.BUILT);
 			assignOrdinal(s);
 		}
 		return s;
@@ -1574,8 +1898,11 @@ public final class CityState {
 		}
 		boolean busy = !pendingVerify.isEmpty() || verifyingSlot != null;
 		for (Slot s : slots.values()) {
+			if (s.anchor != null) {
+				continue;   // covered slots follow their anchor
+			}
 			if (s.status == SlotStatus.BUILDING && (s.builder == null || !alive.contains(s.builder))) {
-				s.status = SlotStatus.PLANNED;
+				setStatus(s, SlotStatus.PLANNED);
 				s.builder = null;
 			}
 			if (s.status == SlotStatus.BUILDING || s.status == SlotStatus.VERIFY) {
@@ -1591,7 +1918,7 @@ public final class CityState {
 		if (slots.get(new SlotKey(0, 0)) != null && slots.get(new SlotKey(0, 0)).status == SlotStatus.BUILT) {
 			ReaderWall.update(level, seedPos, readerLines());
 		}
-		if (labels) {
+		if (labels()) {
 			CellLabels.update(level, this);
 		}
 		int desired = Math.min(cfg.maxBuilders, 1 + builtCount / cfg.cellsPerBuilder);
@@ -1793,7 +2120,7 @@ public final class CityState {
 	// ---- L3: the city's dreams (doc 14) ---------------------------------------------------
 
 	public boolean labels() {
-		return labels;
+		return labels != null ? labels : cfg().cellLabels;
 	}
 
 	public void setLabels(ServerLevel level, boolean on) {
@@ -1843,7 +2170,7 @@ public final class CityState {
 				}
 			}
 		}
-		int registers = builtOfType("register_block").size();
+		int registers = Math.min(Executor.MAX_REGISTERS, busVaults().size());
 		boolean alu = !builtOfType("alu_sub").isEmpty() && !builtOfType("alu_not").isEmpty() && !builtOfType("alu_or").isEmpty();
 		if (ambitious) {
 			for (Cell c : CellLibrary.all()) {
@@ -1862,7 +2189,7 @@ public final class CityState {
 					sensors.add(c.id().getPath() + "." + next + "." + def.outputs().getFirst().name());
 				}
 			}
-			registers++;
+			registers = Math.min(Executor.MAX_REGISTERS, registers + 1);
 			alu = true;
 		}
 		return new net.tabor.seedcity.card.Dreamer.Hardware(actuators, sensors, registers, alu);
@@ -1976,14 +2303,14 @@ public final class CityState {
 	/** A player who restores a Fault Cell's missing block gets the district back: verify, then the Warden comes. */
 	private void watchFaults(ServerLevel level) {
 		for (Slot s : slots.values()) {
-			if (s.status != SlotStatus.FAULT) {
+			if (s.status != SlotStatus.FAULT || s.anchor != null) {
 				continue;
 			}
 			Optional<Placement> p = placement(s);
 			if (p.isPresent() && Integrity.damaged(level, p.get()).isEmpty()) {
 				SeedCity.LOGGER.info("City {}: fault at {} repaired by hand; verifying", seedPos.toShortString(), s.key);
 				s.faulted = false;
-				s.status = SlotStatus.VERIFY;
+				setStatus(s, SlotStatus.VERIFY);
 				s.retries = 0;
 				pendingVerify.add(new BuildTask(p.get(), s.key));
 			}
@@ -2099,7 +2426,7 @@ public final class CityState {
 		list.sort(Comparator.comparingInt((Slot s) -> s.key.chebyshev()).thenComparingInt(s -> s.key.x()).thenComparingInt(s -> s.key.z()));
 		List<String> out = new ArrayList<>();
 		for (Slot s : list) {
-			out.add(s + " {" + district(s.key) + "}" + (s.y != null ? " y=" + s.y : "") + (s.note.isEmpty() ? "" : " [" + s.note + "]"));
+			out.add(s + (s.anchor != null ? " part of " + s.anchor : "") + " {" + district(s.key) + "}" + (s.y != null ? " y=" + s.y : "") + (s.note.isEmpty() ? "" : " [" + s.note + "]"));
 		}
 		return out;
 	}

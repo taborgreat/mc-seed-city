@@ -31,9 +31,9 @@ public final class CellLabels {
 
 	public static void update(ServerLevel level, CityState city) {
 		String tag = tag(city.seedPos());
-		Set<CityState.SlotKey> clocked = city.clockedSlots(true);
+		Set<CityState.SlotKey> clocked = city.liveSlots(true, false);
 		for (CityState.Slot s : city.slots()) {
-			if (s.status != CityState.SlotStatus.BUILT && s.status != CityState.SlotStatus.FAULT) {
+			if ((s.status != CityState.SlotStatus.BUILT && s.status != CityState.SlotStatus.FAULT) || s.anchor != null) {
 				continue;
 			}
 			Optional<Placement> p = city.placement(s);
@@ -61,7 +61,7 @@ public final class CellLabels {
 			StringBuilder text = new StringBuilder();
 			text.append(s.cell.getPath()).append('.').append(s.ordinal).append('\n');
 			text.append(city.district(s.key)).append(" · ");
-			text.append(s.status == CityState.SlotStatus.FAULT ? "FAULT" : clocked.contains(s.key) ? "clocked" : "quiet");
+			text.append(s.status == CityState.SlotStatus.FAULT ? "FAULT" : clocked.contains(s.key) ? "live" : "quiet");
 			StringBuilder ports = new StringBuilder();
 			for (Placement.WorldPort wp : p.get().ports()) {
 				int v = wp.port().dir() == PortDir.OUT

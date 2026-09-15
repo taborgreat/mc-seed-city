@@ -8,7 +8,7 @@
     { "name": "out", "dir": "out", "face": "south", "pos": [3, 1, 6], "bits": 4 }
   ],
   "truth": "register",
-  "weights": { "core": 1, "residential": 0, "forge": 0, "plaza": 0, "ram": 8, "storage": 0 },
+  "weights": { "core": 0, "residential": 0, "forge": 0, "plaza": 0, "ram": 0, "storage": 0 },
   "cost": { "redstone": 32, "stone": 110, "wood": 0 },
   "setpiece": true
 }

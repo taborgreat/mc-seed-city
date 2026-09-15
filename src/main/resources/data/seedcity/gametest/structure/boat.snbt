@@ -1,6 +1,6 @@
 {
     DataVersion: 4903,
-    size: [48, 14, 48],
+    size: [48, 32, 48],
     data: [],
     entities: [],
     palette: []

@@ -1,0 +1,20 @@
+{
+  "id": "seedcity:bus_branch",
+  "kind": "logic",
+  "size": [7, 6, 7],
+  "ports": [
+    { "name": "sel_in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 4 },
+    { "name": "sel_out", "dir": "out", "face": "south", "pos": [3, 1, 6], "bits": 4 },
+    { "name": "sel_out_e", "dir": "out", "face": "east", "pos": [6, 1, 3], "bits": 4 },
+    { "name": "data_in", "dir": "in", "face": "north", "pos": [2, 3, 0], "bits": 4 },
+    { "name": "data_out", "dir": "out", "face": "south", "pos": [2, 3, 6], "bits": 4 },
+    { "name": "data_out_e", "dir": "out", "face": "east", "pos": [6, 3, 4], "bits": 4 },
+    { "name": "ret_in", "dir": "in", "face": "south", "pos": [4, 3, 6], "bits": 4 },
+    { "name": "ret_in_e", "dir": "in", "face": "east", "pos": [6, 3, 2], "bits": 4 },
+    { "name": "ret_out", "dir": "out", "face": "north", "pos": [4, 3, 0], "bits": 4 }
+  ],
+  "truth": "branch",
+  "weights": { "core": 3, "residential": 1, "forge": 2, "plaza": 1, "ram": 5, "storage": 1 },
+  "cost": { "redstone": 60, "stone": 120, "wood": 8 },
+  "setpiece": false
+}

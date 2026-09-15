@@ -1,0 +1,12 @@
+{
+  "id": "seedcity:footfall_plaza",
+  "kind": "sensor",
+  "size": [7, 4, 7],
+  "ports": [
+    { "name": "out", "dir": "out", "face": "south", "pos": [3, 1, 6], "bits": 4 }
+  ],
+  "truth": "sensor",
+  "weights": { "core": 1, "residential": 2, "forge": 0, "plaza": 4, "ram": 0, "storage": 1 },
+  "cost": { "redstone": 8, "stone": 60, "wood": 2 },
+  "setpiece": true
+}

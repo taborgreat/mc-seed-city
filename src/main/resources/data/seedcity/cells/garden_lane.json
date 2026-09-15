@@ -1,0 +1,14 @@
+{
+  "id": "seedcity:garden_lane",
+  "kind": "logic",
+  "size": [7, 4, 7],
+  "ports": [
+    { "name": "in", "dir": "in", "face": "north", "pos": [3, 1, 0], "bits": 1 },
+    { "name": "out", "dir": "out", "face": "south", "pos": [3, 1, 6], "bits": 1 }
+  ],
+  "truth": "passthrough",
+  "weights": { "core": 1, "residential": 5, "forge": 1, "plaza": 4, "ram": 1, "storage": 2 },
+  "cost": { "redstone": 6, "stone": 30, "wood": 4 },
+  "fault": [3, 1, 3],
+  "setpiece": true
+}

@@ -126,7 +126,11 @@ public final class DreamTests {
 		boolean[] sawPlan = {false};
 		helper.onEachTick(() -> {
 			if (helper.getTick() % 600 == 0) {
-				SeedCity.LOGGER.info("dream growth tick {}: {}", helper.getTick(), c.summary());
+				StringBuilder who = new StringBuilder();
+				for (var b : c.builders(level)) {
+					who.append(" [").append(b.status()).append(" at ").append(b.blockPosition().subtract(helper.absolutePos(BlockPos.ZERO)).toShortString()).append(']');
+				}
+				SeedCity.LOGGER.info("dream growth tick {}: {} builders:{}", helper.getTick(), c.summary(), who);
 			}
 			if (!c.wantedCells().isEmpty()) {
 				sawPlan[0] = true;

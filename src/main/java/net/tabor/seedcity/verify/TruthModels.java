@@ -35,6 +35,9 @@ public final class TruthModels {
 		register(new Analog("max", Math::max));
 		register(new Analog("min", Math::min));
 		register(new Complement());
+		register(new Lanes());
+		register(new Loopback());
+		register(new Branch());
 	}
 
 	private TruthModels() {
@@ -45,6 +48,16 @@ public final class TruthModels {
 	}
 
 	public static Optional<TruthModel> byName(String name) {
+		if (name.startsWith("ram_")) {
+			String[] parts = name.split("_");
+			if (parts.length == 3) {
+				try {
+					return Optional.of(new Ram(Integer.parseInt(parts[1]), Integer.parseInt(parts[2])));
+				} catch (NumberFormatException e) {
+					return Optional.empty();
+				}
+			}
+		}
 		return Optional.ofNullable(MODELS.get(name));
 	}
 
@@ -545,6 +558,179 @@ public final class TruthModels {
 	}
 
 	/** Port a (4-bit in) and out: out = 15 - a. The analog NOT. */
+	/** A handful of mixed vectors over three 4-bit inputs, instead of every combination. */
+	static List<Map<String, Integer>> laneVectors(CellDefinition def) {
+		List<Port> ins = def.inputs();
+		int[][] levels = {{0, 0, 0}, {7, 15, 1}, {15, 7, 15}, {1, 1, 7}, {14, 0, 9}, {0, 0, 0}};
+		List<Map<String, Integer>> out = new ArrayList<>();
+		for (int[] row : levels) {
+			Map<String, Integer> m = new LinkedHashMap<>();
+			for (int i = 0; i < ins.size(); i++) {
+				m.put(ins.get(i).name(), row[i % row.length]);
+			}
+			out.add(m);
+		}
+		return out;
+	}
+
+	/** Bus lanes: every output {@code x_out} reads exactly what its input {@code x_in} was driven with. */
+	static final class Lanes implements TruthModel {
+		public String name() {
+			return "lanes";
+		}
+
+		public List<Map<String, Integer>> stimuli(CellDefinition def) {
+			return laneVectors(def);
+		}
+
+		public Optional<String> judge(CellDefinition def, List<Sample> samples) {
+			for (Sample s : samples) {
+				for (Port out : def.outputs()) {
+					if (!out.name().endsWith("_out")) {
+						continue;
+					}
+					String in = out.name().substring(0, out.name().length() - 4) + "_in";
+					if (def.port(in) == null) {
+						return Optional.of("lanes model needs an input " + in + " for " + out.name());
+					}
+					Optional<String> m = mismatch(out, expect(out, s.in(in)), s, "for " + in + "=" + s.in(in));
+					if (m.isPresent()) {
+						return m;
+					}
+				}
+			}
+			return Optional.empty();
+		}
+	}
+
+	/**
+	 * A RAM vault on the bus: ports sel_in, data_in (4-bit in) and ret_out (4-bit out). Writing
+	 * is select = w with the value on data, released with data held; reading is select = r, when
+	 * ret_out carries the held value; any other select leaves ret_out at 0 and the value alone.
+	 */
+	static final class Ram implements TruthModel {
+		private final int r;
+		private final int w;
+
+		Ram(int r, int w) {
+			this.r = r;
+			this.w = w;
+		}
+
+		public String name() {
+			return "ram_" + r + "_" + w;
+		}
+
+		@Override
+		public int settleTicks(CellDefinition def) {
+			return Math.max(def.settleTicks(), 60);
+		}
+
+		public List<Map<String, Integer>> stimuli(CellDefinition def) {
+			List<Map<String, Integer>> s = new ArrayList<>();
+			s.add(vec("sel_in", 0, "data_in", 0));
+			s.add(vec("sel_in", w, "data_in", 11));      // write 11
+			s.add(vec("sel_in", 0, "data_in", 11));      // release with data held
+			s.add(vec("sel_in", 0, "data_in", 3));       // data changes while holding
+			s.add(vec("sel_in", r, "data_in", 3));       // read: 11
+			s.add(vec("sel_in", 0, "data_in", 3));
+			s.add(vec("sel_in", r + 1 == w ? r + 2 : r + 1, "data_in", 3));   // another address: silence
+			s.add(vec("sel_in", w, "data_in", 5));       // write 5
+			s.add(vec("sel_in", 0, "data_in", 5));
+			s.add(vec("sel_in", w == 15 ? w - 1 : w + 1, "data_in", 9));   // a write to another address: ignored
+			s.add(vec("sel_in", r, "data_in", 0));       // read: 5
+			s.add(vec("sel_in", 15, "data_in", 0));
+			s.add(vec("sel_in", r, "data_in", 0));       // still 5
+			return s;
+		}
+
+		public Optional<String> judge(CellDefinition def, List<Sample> samples) {
+			Port out = def.port("ret_out");
+			if (out == null || def.port("sel_in") == null || def.port("data_in") == null) {
+				return Optional.of("ram model needs ports sel_in, data_in, ret_out");
+			}
+			int held = 0;
+			for (int i = 0; i < samples.size(); i++) {
+				Sample s = samples.get(i);
+				int sel = s.in("sel_in");
+				if (sel == w) {
+					held = s.in("data_in");
+				}
+				int expected = sel == r ? held : 0;
+				Optional<String> m = mismatch(out, expected, s, "at step " + i + " (sel=" + sel + ", data=" + s.in("data_in") + ", held=" + held + ")");
+				if (m.isPresent()) {
+					return m;
+				}
+			}
+			return Optional.empty();
+		}
+	}
+
+	/** A bus branch: select and data reach both outputs; the return carries the stronger of its two inputs. */
+	static final class Branch implements TruthModel {
+		public String name() {
+			return "branch";
+		}
+
+		public List<Map<String, Integer>> stimuli(CellDefinition def) {
+			List<Map<String, Integer>> s = new ArrayList<>();
+			int[][] rows = {{0, 0, 0, 0}, {7, 15, 1, 9}, {15, 7, 12, 3}, {1, 1, 0, 15}, {14, 0, 6, 6}, {0, 0, 0, 0}};
+			for (int[] row : rows) {
+				s.add(vec("sel_in", row[0], "data_in", row[1], "ret_in", row[2], "ret_in_e", row[3]));
+			}
+			return s;
+		}
+
+		public Optional<String> judge(CellDefinition def, List<Sample> samples) {
+			for (Sample s : samples) {
+				for (String lane : new String[] {"sel", "data"}) {
+					for (String suffix : new String[] {"_out", "_out_e"}) {
+						Port out = def.port(lane + suffix);
+						if (out == null) {
+							return Optional.of("branch model needs port " + lane + suffix);
+						}
+						Optional<String> m = mismatch(out, expect(out, s.in(lane + "_in")), s, "for " + lane + "_in=" + s.in(lane + "_in"));
+						if (m.isPresent()) {
+							return m;
+						}
+					}
+				}
+				Port ret = def.port("ret_out");
+				int expected = Math.max(s.in("ret_in"), s.in("ret_in_e"));
+				Optional<String> m = mismatch(ret, expected, s, "for ret_in=" + s.in("ret_in") + " ret_in_e=" + s.in("ret_in_e"));
+				if (m.isPresent()) {
+					return m;
+				}
+			}
+			return Optional.empty();
+		}
+	}
+
+	/** A bus end: the return lane carries back what the data lane brought. */
+	static final class Loopback implements TruthModel {
+		public String name() {
+			return "loopback";
+		}
+
+		public List<Map<String, Integer>> stimuli(CellDefinition def) {
+			return laneVectors(def);
+		}
+
+		public Optional<String> judge(CellDefinition def, List<Sample> samples) {
+			Port out = def.port("ret_out");
+			if (out == null || def.port("data_in") == null) {
+				return Optional.of("loopback model needs ports data_in and ret_out");
+			}
+			for (Sample s : samples) {
+				Optional<String> m = mismatch(out, expect(out, s.in("data_in")), s, "for data_in=" + s.in("data_in"));
+				if (m.isPresent()) {
+					return m;
+				}
+			}
+			return Optional.empty();
+		}
+	}
+
 	static final class Complement implements TruthModel {
 		public String name() {
 			return "complement";

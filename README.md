@@ -139,4 +139,9 @@ surrounding surface; ponds, cliffs, warding and player builds stay untouched); C
 the city to mine wood, stone and redstone and haul it to the warehouses, so growth is a function
 of the land; the chunk cap halts growth exactly; and an idle city writes and runs its own cards,
 which you find as books in the reader. See [docs/terrain.md](docs/terrain.md) and
-[docs/fragments.md](docs/fragments.md). Next: bus streets with select lanes, and the Foundry.
+[docs/fragments.md](docs/fragments.md). The bus is in (2026-09-14): a street of three comparator
+lanes (select, data, return) leaves the Core's east gate, branches, and ends in two-slot RAM
+vaults that decode their own address; a program's registers R0 and R1 live in those vaults and
+the Core reaches them only over the bus. See the bus section of [docs/cells.md](docs/cells.md).
+Next: more addressable vaults, readouts and Sentinels on bus vaults, the visual pass on streets
+and bridges, and the Foundry.

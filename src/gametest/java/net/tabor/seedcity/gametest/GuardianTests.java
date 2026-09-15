@@ -33,6 +33,7 @@ public final class GuardianTests {
 
 	private static SeedCityConfig quietConfig() {
 		SeedCityConfig c = new SeedCityConfig();
+		c.unlimitedMaterials = true;   // not a supply test
 		c.dreamAtStart = false;
 		c.blocksPerSecond = 40;
 		c.maxBuilders = 1;
@@ -155,6 +156,7 @@ public final class GuardianTests {
 	@GameTest(structure = "seedcity:arena", maxTicks = 40)
 	public void plannerPlantsAFault(GameTestHelper helper) {
 		SeedCityConfig cfg = new SeedCityConfig();
+		cfg.unlimitedMaterials = true;   // not a supply test
 		cfg.dreamAtStart = false;
 		cfg.faultsPerCity = 1;
 		cfg.faultAfterLiveCells = 3;

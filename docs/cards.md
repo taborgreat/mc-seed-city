@@ -10,7 +10,8 @@ to eject the card; the city then goes back to whatever its hardware does on its 
 ## The language
 
 One op per line. Comments start with `;`. Labels are a name followed by `:` on their own line.
-Registers are `R0` to `R7`. Immediates are `0` to `15`. Case does not matter.
+Registers are `R0` and `R1` in this version (each is a RAM vault on the bus; more addresses are
+a later step). Immediates are `0` to `15`. Case does not matter.
 
 | Op | Meaning |
 | --- | --- |
@@ -34,28 +35,30 @@ or a Sentinel's alertness as well as on/off signals.
 ## Naming ports
 
 `type.port` is the first built cell of that type; `type.N.port` is the Nth built one;
-`type.*.port` is every one. Types are cell names (`drawbridge`, `daylight_plaza`, `register_block`);
+`type.*.port` is every one. Types are cell names (`drawbridge`, `daylight_plaza`, `vault`);
 ports are what the cell declares (`/seedcity list` shows them). `OUT` needs an input port, `IN`
 an output port. A port that does not exist is a card error with a line number; a cell that has
 not been built yet is a hardware need.
 
 ## What actually happens
 
-Every value lives in a register vault and every operation runs through an ALU cell; the Core only
-sequences (docs/city-as-computer.md). `SET R0 15` drives the vault's input port and pulses its
-clock; you can watch the vault's windows light. `SUB R0 6` puts R0 and 6 on the subtractor's
-ports, waits for the comparators, reads the result and latches it back. `ADD` is three trips
-(complement, subtract, complement); `AND` is two subtractions.
+Every value lives in a RAM vault on the bus and every operation runs through an ALU cell; the
+Core only sequences (docs/city-as-computer.md). `SET R0 15` puts 15 on the data lane and the
+vault's write address on the select lane; the vault's ring latches it. Reading R0 puts its read
+address on the select lane and listens on the return lane. `SUB R0 6` reads R0 over the bus,
+puts it and 6 on the subtractor's ports, waits for the comparators, reads the result and writes
+it back over the bus. `ADD` is three trips (complement, subtract, complement); `AND` is two
+subtractions.
 
 One instruction starts on each beat of the Clock Tower (68 game ticks), so a program runs at the
 speed of a slow heartbeat, and `WAIT 2` is two beats. Break the tower and the program stops.
 
-The Core reaches a register or ALU port through a **terminal**, a glowing signal block it places
-just outside the port, replacing whatever was there (a wire's end, a wall, air). Ejecting the card
-puts everything back. `OUT` and `IN` to cells outside the core district go by **Courier**: a mob
+The Core reaches an ALU port through a **terminal**, a glowing signal block it places just
+outside the port, replacing whatever was there (a wire's end, a wall, air). Ejecting the card
+puts everything back. Registers are reached only over the bus (docs/cells.md, "The bus"). `OUT` and `IN` to cells outside the core district go by **Courier**: a mob
 picks the value up at the Core, flies it to the port and drives it there, or reads a sensor and
 flies the value back while the program waits. You can watch information travel; if the Courier
-never gets there, the value never arrives. Bus streets with real addressing are a later phase.
+never gets there, the value never arrives. `/seedcity manual` hands you all of this as a book.
 
 ## Plans
 

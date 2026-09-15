@@ -29,11 +29,41 @@ public final class Cell {
 	private final CellDefinition definition;
 	private final StructureTemplate template;
 	private final List<CellBlock> blocks;
+	private final List<BlockPos> voids;
 
 	public Cell(CellDefinition definition, StructureTemplate template, List<CellBlock> blocks) {
+		this(definition, template, blocks, List.of());
+	}
+
+	/** @param voids structure-void positions: the land there is left as it is, above and below */
+	public Cell(CellDefinition definition, StructureTemplate template, List<CellBlock> blocks, List<BlockPos> voids) {
 		this.definition = definition;
 		this.template = template;
 		this.blocks = order(blocks);
+		this.voids = List.copyOf(voids);
+	}
+
+	/**
+	 * Cell-local columns (x, z packed as {@code x * 1024 + z}) that hold only structure void, after
+	 * rotation: site work leaves those columns alone, so a lane can keep the grass on its verges.
+	 */
+	public java.util.Set<Long> voidColumns(Rotation rotation) {
+		java.util.Set<Long> built = new java.util.HashSet<>();
+		for (CellBlock b : blocks(rotation)) {
+			built.add(column(b.pos()));
+		}
+		java.util.Set<Long> out = new java.util.HashSet<>();
+		for (BlockPos v : voids) {
+			long c = column(v.rotate(rotation));
+			if (!built.contains(c)) {
+				out.add(c);
+			}
+		}
+		return out;
+	}
+
+	public static long column(BlockPos p) {
+		return (long) p.getX() * 1024 + p.getZ();
 	}
 
 	/**

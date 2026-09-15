@@ -31,8 +31,8 @@ import java.util.function.Predicate;
 public final class Terrain {
 	/** Blocks in this tag fence the city: Builders will not plan across them, Collectors will not pass them. */
 	public static final TagKey<Block> WARDING = TagKey.create(Registries.BLOCK, SeedCity.id("warding"));
-	/** Columns scanned below the heightmap looking for ground before giving up. */
-	private static final int GROUND_SCAN = 24;
+	/** Blocks scanned below the heightmap looking for ground before giving up: a tall canopy, an overhang, or a test ceiling. */
+	private static final int GROUND_SCAN = 48;
 
 	private Terrain() {
 	}
@@ -189,8 +189,12 @@ public final class Terrain {
 	 * city's own transient blocks (the Seed, probes, terminals) are fine.
 	 */
 	public static boolean volumeClear(ServerLevel level, int x0, int z0, int size, int y, int height, BlockPos seed) {
-		for (int x = 0; x < size; x++) {
-			for (int z = 0; z < size; z++) {
+		return volumeClear(level, x0, z0, size, size, y, height, seed);
+	}
+
+	public static boolean volumeClear(ServerLevel level, int x0, int z0, int sx, int sz, int y, int height, BlockPos seed) {
+		for (int x = 0; x < sx; x++) {
+			for (int z = 0; z < sz; z++) {
 				BlockPos floor = new BlockPos(x0 + x, y, z0 + z);
 				BlockState f = level.getBlockState(floor);
 				boolean floorOk = (!f.isAir() && !f.is(Blocks.BARRIER) && f.isCollisionShapeFullBlock(level, floor) && !PlayerBlocks.placedByPlayer(level, floor))
@@ -240,9 +244,18 @@ public final class Terrain {
 	 * with that column's floor block, so a cell on a slope stands on masonry rather than on air.
 	 */
 	public static List<Placed> foundation(ServerLevel level, BoundingBox box, java.util.function.Function<BlockPos, BlockState> floorBlock, int maxDepth) {
+		return foundation(level, box, floorBlock, maxDepth, p -> false);
+	}
+
+	/** As above, leaving alone the columns {@code skip} accepts (a lane's grass verges). */
+	public static List<Placed> foundation(ServerLevel level, BoundingBox box, java.util.function.Function<BlockPos, BlockState> floorBlock, int maxDepth,
+										  Predicate<BlockPos> skip) {
 		List<Placed> out = new ArrayList<>();
 		for (int x = box.minX(); x <= box.maxX(); x++) {
 			for (int z = box.minZ(); z <= box.maxZ(); z++) {
+				if (skip.test(new BlockPos(x, box.minY(), z))) {
+					continue;
+				}
 				BlockState fill = floorBlock.apply(new BlockPos(x, box.minY(), z));
 				for (int y = box.minY() - 1; y >= box.minY() - maxDepth; y--) {
 					BlockPos p = new BlockPos(x, y, z);

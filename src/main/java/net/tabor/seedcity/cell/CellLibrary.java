@@ -112,21 +112,22 @@ public final class CellLibrary extends SimpleReloadListener<CellLibrary.Loaded> 
 		Resource nbt = rm.getResource(nbtId).orElseThrow(() -> new CellFormatException("missing structure " + nbtId));
 		StructureTemplate template = new StructureTemplate();
 		List<Cell.CellBlock> blocks = new ArrayList<>();
+		List<BlockPos> voids = new ArrayList<>();
 		try (InputStream in = nbt.open()) {
 			CompoundTag tag = NbtIo.readCompressed(in, NbtAccounter.unlimitedHeap());
 			template.load(BuiltInRegistries.BLOCK, tag);
-			readBlocks(tag, blocks);
+			readBlocks(tag, blocks, voids);
 		} catch (Exception ex) {
 			throw new CellFormatException("structure " + nbtId + " unreadable: " + ex.getMessage(), ex);
 		}
 		if (!template.getSize().equals(def.size())) {
 			throw new CellFormatException("structure size " + template.getSize() + " differs from sidecar size " + def.size());
 		}
-		return new Cell(def, template, blocks);
+		return new Cell(def, template, blocks, voids);
 	}
 
 	/** Reads the single-palette structure format into a flat block list for Builders. */
-	private static void readBlocks(CompoundTag tag, List<Cell.CellBlock> out) {
+	private static void readBlocks(CompoundTag tag, List<Cell.CellBlock> out, List<BlockPos> voids) {
 		ListTag paletteTag = tag.getListOrEmpty("palette");
 		List<BlockState> palette = new ArrayList<>();
 		for (int i = 0; i < paletteTag.size(); i++) {
@@ -139,10 +140,15 @@ public final class CellLibrary extends SimpleReloadListener<CellLibrary.Loaded> 
 				continue;
 			}
 			BlockState state = palette.get(idx);
-			if (state.isAir() || state.is(Blocks.STRUCTURE_VOID)) {
+			BlockPos at = new BlockPos(pos.getIntOr(0, 0), pos.getIntOr(1, 0), pos.getIntOr(2, 0));
+			if (state.is(Blocks.STRUCTURE_VOID)) {
+				voids.add(at);
 				continue;
 			}
-			out.add(new Cell.CellBlock(new BlockPos(pos.getIntOr(0, 0), pos.getIntOr(1, 0), pos.getIntOr(2, 0)), state));
+			if (state.isAir()) {
+				continue;
+			}
+			out.add(new Cell.CellBlock(at, state));
 		}
 	}
 }

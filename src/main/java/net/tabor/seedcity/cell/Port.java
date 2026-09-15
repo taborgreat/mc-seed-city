@@ -26,7 +26,24 @@ public record Port(String name, PortDir dir, Direction face, BlockPos pos, int b
 	 * repeater port reads any non-zero strength as on. See DECISIONS.md.
 	 */
 	public boolean compatibleWith(Port other) {
-		return dir != other.dir;
+		return dir != other.dir && isBusLane() == other.isBusLane();
+	}
+
+	/** Bus lanes (sel, data, ret) carry addresses and values; a wire must not listen to them, nor they to a wire. */
+	public boolean isBusLane() {
+		return name.startsWith("sel_") || name.startsWith("data_") || name.startsWith("ret_");
+	}
+
+	/**
+	 * Where the port sits along its face: x for north and south faces, z for east and west. Two
+	 * ports on facing sides of adjacent cells meet when their along and y agree.
+	 */
+	public int along() {
+		return face.getAxis() == Direction.Axis.Z ? pos.getX() : pos.getZ();
+	}
+
+	public boolean meets(Port other) {
+		return along() == other.along() && pos.getY() == other.pos().getY();
 	}
 
 	public boolean sameWidth(Port other) {

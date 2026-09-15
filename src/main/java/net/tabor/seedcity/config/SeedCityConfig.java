@@ -26,10 +26,14 @@ public final class SeedCityConfig {
 	public double builderSpeed = 1.0;
 	/** Seconds a builder waits on an unreachable target before re-queuing the task (doc 24: 30). */
 	public int abandonSeconds = 30;
-	/** Material the Seed starts the city with. Collectors (later phase) add to it. */
-	public int initialRedstone = 4000;
-	public int initialStone = 20000;
-	public int initialWood = 4000;
+	/**
+	 * Material the Seed starts the city with: enough for the root and the first ring, and short of
+	 * wood from the start, so Collectors are out within the first minute and growth is paced by what
+	 * they bring home.
+	 */
+	public int initialRedstone = 1200;
+	public int initialStone = 1500;
+	public int initialWood = 40;
 	public boolean unlimitedMaterials = false;
 	/** Hard chunk cap: growth stops once the city footprint spans this many chunks. */
 	public int maxChunks = 64;
@@ -75,6 +79,8 @@ public final class SeedCityConfig {
 	public int dreamAfterSeconds = 600;
 	/** L3: how long a dream runs before the city dreams another, if still idle and undisturbed. */
 	public int dreamLengthSeconds = 1800;
+	/** Floating labels over every cell (name, district, clocked, port values); /seedcity labels toggles per city. */
+	public boolean cellLabels = true;
 	/** A new city with nothing in its reader dreams its first card at once, so it always has a purpose. */
 	public boolean dreamAtStart = true;
 

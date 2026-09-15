@@ -22,6 +22,7 @@ import java.util.Optional;
  */
 public final class CellVerifyTests {
 	private static final String ARENA = "seedcity:arena";
+	private static final String BOAT = "seedcity:boat";
 	private static final int BUDGET = 1600;
 	/** Leaves a ring of air around a 7x7 cell inside the 12x12 arena for probes. */
 	private static final BlockPos CELL_ORIGIN = new BlockPos(2, 1, 2);
@@ -34,6 +35,56 @@ public final class CellVerifyTests {
 	@GameTest(structure = ARENA, maxTicks = BUDGET)
 	public void busSegmentRotated(GameTestHelper helper) {
 		verifyCell(helper, "bus_segment", Rotation.CLOCKWISE_90);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void busStreet(GameTestHelper helper) {
+		verifyCell(helper, "bus_street", Rotation.NONE);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void busStreetRotated(GameTestHelper helper) {
+		verifyCell(helper, "bus_street", Rotation.COUNTERCLOCKWISE_90);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void busEnd(GameTestHelper helper) {
+		verifyCell(helper, "bus_end", Rotation.NONE);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void busBranch(GameTestHelper helper) {
+		verifyCell(helper, "bus_branch", Rotation.NONE);
+	}
+
+	@GameTest(structure = BOAT, maxTicks = 2400)
+	public void ramVault1(GameTestHelper helper) {
+		verifyCellAt(helper, "ram_vault_1", Rotation.NONE, new BlockPos(4, 1, 4));
+	}
+
+	@GameTest(structure = BOAT, maxTicks = 2400)
+	public void ramVault2(GameTestHelper helper) {
+		verifyCellAt(helper, "ram_vault_2", Rotation.NONE, new BlockPos(4, 1, 4));
+	}
+
+	@GameTest(structure = BOAT, maxTicks = 2400)
+	public void ramVault1Rotated(GameTestHelper helper) {
+		verifyCellAt(helper, "ram_vault_1", Rotation.COUNTERCLOCKWISE_90, new BlockPos(4, 1, 4));
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void gardenLane(GameTestHelper helper) {
+		verifyCell(helper, "garden_lane", Rotation.CLOCKWISE_90);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void gatehouse(GameTestHelper helper) {
+		verifyCell(helper, "gatehouse", Rotation.NONE);
+	}
+
+	@GameTest(structure = ARENA, maxTicks = BUDGET)
+	public void footfallPlaza(GameTestHelper helper) {
+		verifyCell(helper, "footfall_plaza", Rotation.NONE);
 	}
 
 	@GameTest(structure = ARENA, maxTicks = BUDGET)
@@ -143,20 +194,30 @@ public final class CellVerifyTests {
 	}
 
 	private static void verifyCell(GameTestHelper helper, String name, Rotation rotation) {
-		Identifier id = SeedCity.id(name);
-		Optional<Cell> cell = CellLibrary.get(id);
-		if (cell.isEmpty()) {
-			helper.fail("cell not loaded: " + id + " (library errors: " + CellLibrary.errors() + ")");
-			return;
-		}
-		// Rotating about the origin swings the footprint to negative x or z; shift so it stays in the arena.
 		BlockPos origin = switch (rotation) {
 			case NONE -> CELL_ORIGIN;
 			case CLOCKWISE_90 -> CELL_ORIGIN.offset(6, 0, 0);
 			case CLOCKWISE_180 -> CELL_ORIGIN.offset(6, 0, 6);
 			case COUNTERCLOCKWISE_90 -> CELL_ORIGIN.offset(0, 0, 6);
 		};
-		Placement placement = new Placement(cell.get(), helper.absolutePos(origin), rotation);
+		verifyCellAt(helper, name, rotation, origin);
+	}
+
+	/** Places a cell with its rotation origin at {@code origin} (already shifted for the rotation) and verifies it. */
+	private static void verifyCellAt(GameTestHelper helper, String name, Rotation rotation, BlockPos origin) {
+		Identifier id = SeedCity.id(name);
+		Optional<Cell> cell = CellLibrary.get(id);
+		if (cell.isEmpty()) {
+			helper.fail("cell not loaded: " + id + " (library errors: " + CellLibrary.errors() + ")");
+			return;
+		}
+		Optional<Cell> c = cell;
+		// a vault is 14 deep: rotated counterclockwise it swings west, so shift by its depth instead of 6
+		BlockPos shifted = origin;
+		if (rotation == Rotation.COUNTERCLOCKWISE_90 && c.get().size().getZ() != 7) {
+			shifted = origin.offset(0, 0, c.get().size().getX() - 1 - 6);
+		}
+		Placement placement = new Placement(cell.get(), helper.absolutePos(shifted), rotation);
 		if (!placement.place(helper.getLevel())) {
 			helper.fail("could not place " + placement);
 			return;

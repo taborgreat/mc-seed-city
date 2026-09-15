@@ -1,0 +1,12 @@
+{
+  "id": "seedcity:gatehouse",
+  "kind": "actuator",
+  "size": [7, 9, 7],
+  "ports": [
+    { "name": "gate", "dir": "in", "face": "west", "pos": [0, 1, 0], "bits": 4 }
+  ],
+  "truth": "actuator",
+  "weights": { "core": 3, "residential": 1, "forge": 0, "plaza": 2, "ram": 0, "storage": 1 },
+  "cost": { "redstone": 24, "stone": 200, "wood": 12 },
+  "setpiece": true
+}

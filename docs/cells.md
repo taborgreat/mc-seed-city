@@ -85,15 +85,22 @@ them. Results are cached by (cell, neighbours, rotation).
 
 | Cell | Kind | Truth | Ports | Circuit |
 | --- | --- | --- | --- | --- |
-| core | core | none | none | open chamber around the Seed (a structure void keeps the Seed); placed first by force |
-| clock_tower | logic | clock | out S 1b | torch-repeater loop, 68 game tick period, in a chamber under an 11-block spire; a torch ladder runs the beat up the spire as alternating bands of lamps; placed south of the core by force |
+| core | core | none | sel_out E 4b, data_out E 4b, ret_in E 4b | open chamber around the Seed (a structure void keeps the Seed) with the bus gate on its east face: two terminal blocks the Core drives (select, data) and the return lane it reads; placed first by force |
+| bus_street | logic | lanes | sel_in N, data_in N, ret_out N; sel_out S, data_out S, ret_in S (all 4b) | a paved street carrying the three bus lanes: select under the pavement at y=1, data and return on top under glass, one comparator per block so nothing is lost |
+| bus_branch | logic | branch | the street's six ports plus sel_out_e, data_out_e, ret_in_e (E, 4b) | a street that also taps select and data eastward and merges the eastern return into the northbound one (a block takes the stronger value, and only one vault answers a select) |
+| bus_end | logic | loopback | sel_in N, data_in N, ret_out N | end of a bus: data turns straight into return, so the Core can hear its own voice; the grammar's dead end for a street |
+| ram_vault_1, ram_vault_2 | logic | ram_1_6, ram_2_8 | sel_in N, data_in N, ret_out N (4b), 7x6x14 | a two-slot RAM vault on the bus: a dust snake decodes the select lane, a four-comparator ring holds the word, the ring is written when select says the write address and put on the return lane when it says the read address; vault k reads at select k and writes at 6 (k=1) or 8 (k=2) |
+| clock_tower | logic | clock | out S 1b | torch-repeater loop, 68 game tick period, in a chamber under a 21-block spire; a torch ladder runs the beat up the spire as alternating bands of lamps; placed south of the core by force |
 | bus_segment | logic | passthrough | in N 4b, out S 4b | a paved street with seven comparators in a glass-covered groove down the middle, lantern posts on the corners |
 | wire_segment | logic | passthrough | in N 1b, out S 1b | a paved street: repeater, dust, repeater under glass; carries the clock |
 | junction | logic | passthrough | in N 1b; out S, E, W 1b | a crossroads: dust cross under glass feeding three repeaters; fans the clock out |
 | inverter | logic | not | in N 1b, out S 1b | repeater into a block, torch on the far side, dust out; lamp shows the inverted state |
-| register_block | logic | register | in N 4b, clk W 1b, out S 4b | a vault: four-comparator ring holds a strength; clk gates the ring, NOT clk gates the input; windows light when non-zero and a four-lamp gauge on the ground-floor wall shows the value (1, >4, >7, >10) |
+| register_block | logic | register | in N 4b, clk W 1b, out S 4b | a vault: four-comparator ring holds a strength; clk gates the ring, NOT clk gates the input; windows light when non-zero and a four-lamp gauge on the ground-floor wall shows the value (1, >4, >7, >10). Zero weights since the bus: for blueprints and hand-built circuits |
 | daylight_plaza | sensor | sensor | out S 4b | daylight detector read by a comparator: a slow 4-bit source |
 | drawbridge | actuator | actuator | in N 1b | a plank deck with a slime spine spans a water channel between two banks; the input powers a pier that drives one sticky piston, lifting the whole deck |
+| garden_lane | logic | passthrough | in N 1b, out S 1b | the street's middle three columns only; the verges are structure void, so the grass, flowers or tree edge already there stay and the city breathes between buildings |
+| gatehouse | actuator | actuator | gate W 4b | a three-wide arch over the street between two towers; a dust stair in the west tower's window wall powers three sticky pistons that drop a portcullis of iron bars into the south mouth; any value above 0 shuts it |
+| footfall_plaza | sensor | sensor | out S 4b | three gold pressure plates across the path; the blocks under them carry the weight to a dust row and a comparator: one player reads 1, a crowd more |
 | storage_cell | storage | none | none | brick warehouse with barrels and a roof crane; Collectors unload and Builders fetch here |
 | decor_plaza | decor | none | none | paved square with a fountain and lantern posts; the grammar's always-legal fallback |
 | alu_sub | logic | sub | a N 4b, b W 4b, out S 4b | one subtract-mode comparator: out = max(a − b, 0) |
@@ -116,6 +123,38 @@ look and are exempt from the set-piece rule.
 Core and clock tower carry zero district weights so the grammar never picks them; the planner
 places them by force at slots (0,0) and (0,1), and forces a junction at (0,2) on the clock's
 output so the signal fans out from the start. Everything else is the grammar's choice.
+
+### The bus
+
+Programs keep their registers in RAM vaults reached over the bus, not through Core terminals.
+The bus is three comparator lanes on the shared grid, one comparator per block so a value
+crosses any number of cells unchanged:
+
+| Lane | Where | Direction | Carries |
+| --- | --- | --- | --- |
+| select | y=1, x=3 (under the pavement) | away from the Core | which vault should listen, and whether to read or write |
+| data | y=3, x=2 (under glass) | away from the Core | the word being written |
+| return | y=3, x=4 (under glass) | back to the Core | the word a vault answers with |
+
+Bus ports are named `sel_*`, `data_*`, `ret_*`; a bus lane only mates another bus lane, never a
+clock wire (`Port.isBusLane`). The Core's gate is on its east face. A street placed east of the
+Core is rotated a quarter turn counterclockwise so its north face meets the gate; from there the
+grammar continues with streets, turns off with branches and closes with an end or a vault. The
+grammar only grows a bus cell where a live lane arrives, so no street starts in the middle of
+nowhere; the cell on the Core's gate is never a dead end or a vault; and while the program still
+wants RAM a slot a bus lane reaches takes only bus cells, every new one a branch (a tap for the
+next vault) or the wanted vault, so the bus can always grow one more register. Once the RAM is
+committed, the program's other wants (ALU cells, actuators) beat an idle extension of the bus. Streets cross any district at a low weight; vaults stand only in RAM or next to
+the core.
+
+Addresses: vault k answers a read at select k and takes a write at select 6 (k=1) or 8 (k=2).
+The decoder is a dust snake losing one per block; a repeater on the k-th dust says "at least k"
+as 15, and two subtract comparators turn "at least k" and not "at least k+1" into "exactly k".
+The Core (`Executor`) reads a register by driving select to the read address, waiting 90 ticks
+for the lanes to settle, reading `ret_in` and dropping select; it writes by driving data, then
+select to the write address, then dropping select and finally data. Only two registers (R0, R1)
+are addressable in this version; the Reader wall shows the values the program last saw on the
+bus, since a vault has no separate readout port yet.
 
 ### Register timing
 

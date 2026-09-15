@@ -14,7 +14,9 @@
 			"net.tabor.seedcity.gametest.RedstoneRatTests",
 			"net.tabor.seedcity.gametest.TerrainTests",
 			"net.tabor.seedcity.gametest.CollectorTests",
-			"net.tabor.seedcity.gametest.DreamTests"
+			"net.tabor.seedcity.gametest.DreamTests",
+			"net.tabor.seedcity.gametest.RedstoneFactsTests",
+			"net.tabor.seedcity.gametest.BusDecodeTests"
 		]
 	},
 	"depends": {

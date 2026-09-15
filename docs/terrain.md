@@ -59,6 +59,10 @@ currency, which is the design: a seed on a plain crawls, a seed by a forest and 
 
 One Collector to start, one more per warehouse, up to `maxCollectors`. They walk; fence them.
 
+The Seed starts with little (`initialStone`, `initialRedstone`, `initialWood`; defaults 1500,
+1200 and 40): enough for the Core, the tower and the first ring, and short of wood from the
+start, so the first Collector is out within a minute and growth is paced by supply after that.
+
 ## Containment
 
 - **Chunk cap**: a slot that would spread the city's footprint (planned included) past
